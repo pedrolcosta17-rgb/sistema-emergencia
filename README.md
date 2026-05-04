@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🚨 Sistema de Emergência e Denúncias
 
 Um sistema web completo para gerenciar denúncias e acionamento de serviços de emergência, construído com Python Flask, SQLite e HTML/CSS/JavaScript puro.
@@ -184,3 +185,7 @@ Este projeto é fornecido como exemplo educacional.
 ---
 
 **Desenvolvido com ❤️ para Sistema de Emergência**
+=======
+# sistema-emergencia
+Sistema web de emergência com denúncias e acionamento de serviços usando Flask
+>>>>>>> 72173db0495bd99093df71feb4b92e4316ffd3f6
