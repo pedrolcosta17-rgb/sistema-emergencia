@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Emergência e Denúncias</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="min-h-screen bg-slate-100 flex items-center justify-center">
+    <!-- Container Principal -->
+    <div id="app" class="w-full flex items-center justify-center py-8 px-4">
+        
+        <!-- TELA DE LOGIN -->
+        <div id="telaLogin" class="w-full flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl shadow-2xl ring-1 ring-slate-200 p-8 w-full max-w-xl">
+                <h1 class="text-3xl font-bold text-center text-blue-600 mb-8">🚨 Emergência</h1>
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Login</h2>
+                
+                <form id="formLogin" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <input type="email" id="loginEmail" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="seu@email.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Senha</label>
+                        <input type="password" id="loginSenha" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Sua senha">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Entrar</button>
+                </form>
+                
+                <p class="text-center text-gray-600 mt-4">Não tem conta? <a href="#" onclick="mostrarCadastro()" class="text-blue-600 font-semibold hover:underline">Cadastre-se</a></p>
+                <div id="mensagemLogin" class="mt-4 p-3 rounded-lg text-center hidden"></div>
+            </div>
+        </div>
+
+        <!-- TELA DE CADASTRO -->
+        <div id="telaCadastro" class="w-full hidden flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl shadow-2xl ring-1 ring-slate-200 p-8 w-full max-w-3xl">
+                <h1 class="text-3xl font-bold text-center text-blue-600 mb-2">🚨 Emergência</h1>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Criar Conta</h2>
+                    
+                    <form id="formCadastro" class="space-y-4">
+                        <!-- Linha 1 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Nome Completo *</label>
+                                <input type="text" id="cadastroNome" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="João Silva">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">CPF *</label>
+                                <input type="text" id="cadastroCpf" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="000.000.000-00">
+                            </div>
+                        </div>
+
+                        <!-- Linha 2 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Data de Nascimento *</label>
+                                <input type="date" id="cadastroDataNascimento" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Gênero *</label>
+                                <select id="cadastroGenero" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Selecione...</option>
+                                    <option value="Masculino">Masculino</option>
+                                    <option value="Feminino">Feminino</option>
+                                    <option value="Outro">Outro</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Linha 3 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Telefone Principal *</label>
+                                <input type="tel" id="cadastroTelefone1" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="(11) 99999-9999">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Telefone Alternativo</label>
+                                <input type="tel" id="cadastroTelefone2" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="(11) 99999-9999">
+                            </div>
+                        </div>
+
+                        <!-- Linha 4 -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                            <input type="email" id="cadastroEmail" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="seu@email.com">
+                        </div>
+
+                        <!-- Linha 5 -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Confirmar Email *</label>
+                            <input type="email" id="cadastroEmailConfirmacao" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="seu@email.com">
+                        </div>
+
+                        <!-- Linha 6: Endereço Detalhado com CEP automático -->
+                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4">📍 Endereço</h3>
+                            
+                            <!-- Linha 6.1: CEP com busca automática -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">CEP *</label>
+                                    <div class="relative">
+                                        <input type="text" id="cadastroCep" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="00000-000" maxlength="9">
+                                        <button type="button" onclick="buscarCep()" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-blue-600 hover:text-blue-800" title="Buscar CEP">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <p id="cepStatus" class="text-xs text-gray-500 mt-1"></p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Estado (UF) *</label>
+                                    <select id="cadastroEstado" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Carregando...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Município *</label>
+                                    <select id="cadastroMunicipio" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione o estado primeiro</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Linha 6.2: Rua e Número -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Rua/Logradouro *</label>
+                                    <input type="text" id="cadastroRua" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Rua, Avenida, etc.">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Número *</label>
+                                    <input type="text" id="cadastroNumero" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="S/N se não tiver">
+                                </div>
+                            </div>
+
+                            <!-- Linha 6.3: Bairro e Complemento -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Bairro *</label>
+                                    <input type="text" id="cadastroBairro" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Bairro">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Complemento</label>
+                                    <input type="text" id="cadastroComplemento" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Apto, sala, etc. (opcional)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Linha 6 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Senha *</label>
+                                <input type="password" id="cadastroSenha" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Mínimo 6 caracteres">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Confirmar Senha *</label>
+                                <input type="password" id="cadastroSenhaConfirmacao" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Mínimo 6 caracteres">
+                            </div>
+                        </div>
+
+                        <!-- Consentimento LGPD -->
+                        <div class="flex items-start">
+                            <input type="checkbox" id="cadastroLGPD" required class="w-4 h-4 mt-1 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <label class="ml-3 text-sm text-gray-700">Concordo com o armazenamento de meus dados conforme a Lei Geral de Proteção de Dados (LGPD) *</label>
+                        </div>
+
+                        <div class="flex space-x-4">
+                            <button type="submit" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Cadastrar</button>
+                            <button type="button" onclick="mostrarLogin()" class="flex-1 bg-gray-400 text-white py-2 rounded-lg font-semibold hover:bg-gray-500 transition">Voltar</button>
+                        </div>
+                    </form>
+                    
+                    <div id="mensagemCadastro" class="mt-4 p-3 rounded-lg text-center hidden"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TELA DE DASHBOARD -->
+        <div id="telaDashboard" class="w-full hidden flex flex-col items-center justify-center">
+            <!-- Header -->
+            <header class="bg-blue-600 text-white shadow-md">
+                <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                    <div>
+                        <h1 class="text-2xl font-bold">🚨 Sistema de Emergência</h1>
+                        <p id="nomeUsuario" class="text-sm opacity-90">Bem-vindo, <span id="nomeUsuarioSpan"></span></p>
+                    </div>
+                    <button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold transition">Sair</button>
+                </div>
+            </header>
+
+            <!-- Conteúdo Principal -->
+            <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
+                
+                <!-- Abas de Navegação -->
+                <div class="flex flex-wrap gap-2 mb-6">
+                    <button onclick="mostrarAba('acionarServico')" class="aba-btn bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold" data-aba="acionarServico">🚑 Acionar Serviço</button>
+                    <button onclick="mostrarAba('denuncia')" class="aba-btn bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold" data-aba="denuncia">📋 Fazer Denúncia</button>
+                    <button onclick="mostrarAba('fichaMedica')" class="aba-btn bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold" data-aba="fichaMedica">🩺 Ficha Médica</button>
+                    <button id="btnHistorico" onclick="mostrarAba('historico')" class="aba-btn bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold" data-aba="historico">📜 Histórico</button>
+                    <button id="btnAdmin" onclick="mostrarAba('admin')" class="aba-btn bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold hidden" data-aba="admin">⚙️ Admin</button>
+                </div>
+
+                <!-- ABA 1: ACIONAR SERVIÇO -->
+                <div id="abaAcionarServico" class="aba-conteudo">
+                    <div class="bg-white rounded-lg shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Acionar Serviço de Emergência</h2>
+                        <p class="text-gray-600 mb-6">Clique no botão do serviço que você precisa. Sua localização será capturada automaticamente.</p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <button onclick="acionarServico('Polícia')" class="bg-red-600 hover:bg-red-700 text-white p-4 rounded-lg font-semibold text-lg transition transform hover:scale-105">🚔 Polícia</button>
+                            <button onclick="acionarServico('SAMU')" class="bg-yellow-500 hover:bg-yellow-600 text-white p-4 rounded-lg font-semibold text-lg transition transform hover:scale-105">🚑 SAMU</button>
+                            <button onclick="acionarServico('Bombeiros')" class="bg-orange-600 hover:bg-orange-700 text-white p-4 rounded-lg font-semibold text-lg transition transform hover:scale-105">🚒 Bombeiros</button>
+                            <button onclick="acionarServico('Defesa Civil')" class="bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-lg font-semibold text-lg transition transform hover:scale-105">🛡️ Defesa Civil</button>
+                        </div>
+                        
+                        <div id="statusGeolocation" class="text-sm text-gray-600"></div>
+                        <div id="mensagemServico" class="mt-4 p-3 rounded-lg text-center hidden"></div>
+                    </div>
+                </div>
+
+                <!-- ABA 2: FAZER DENÚNCIA -->
+                <div id="abaDenuncia" class="aba-conteudo hidden">
+                    <div class="bg-white rounded-lg shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Fazer uma Denúncia</h2>
+                        
+                        <form id="formDenuncia" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Descrição da Denúncia *</label>
+                                <textarea id="denunciaTexto" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="6" placeholder="Descreva detalhadamente o fato que deseja denunciar..."></textarea>
+                                <p class="text-sm text-gray-500 mt-2">Mínimo 10 caracteres</p>
+                            </div>
+                            
+                            <!-- Input de foto (opcional) -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Foto Evidência (opcional)</label>
+                                <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-500 transition cursor-pointer" id="dropZone">
+                                    <input type="file" id="denunciaFoto" accept="image/*" class="hidden">
+                                    <label for="denunciaFoto" class="cursor-pointer">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <p class="text-sm text-gray-600">Clique ou arraste uma imagem</p>
+                                        <p class="text-xs text-gray-400 mt-1">JPG, PNG, GIF (máx 5MB)</p>
+                                    </label>
+                                </div>
+                                <!-- Preview da imagem selecionada -->
+                                <div id="previewFoto" class="mt-2 hidden">
+                                    <img id="previewImg" class="max-h-32 rounded-lg mx-auto" src="" alt="Preview">
+                                    <button type="button" onclick="removerFoto()" class="text-xs text-red-600 hover:text-red-800 mt-1">Remover imagem</button>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Enviar Denúncia</button>
+                        </form>
+                        
+                        <div id="mensagemDenuncia" class="mt-4 p-3 rounded-lg text-center hidden"></div>
+                    </div>
+                </div>
+
+                <!-- ABA 3: FICHA MÉDICA -->
+                <div id="abaFichaMedica" class="aba-conteudo hidden">
+                    <div class="bg-white rounded-lg shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">🩺 Ficha Médica</h2>
+                        <p class="text-gray-600 mb-6">Mantenha suas informações médicas atualizadas para casos de emergência.</p>
+                        
+                        <!-- Container de Visualização (quando já tem ficha) -->
+                        <div id="fichaVisualizacao" class="hidden">
+                            <div class="bg-gradient-to-r from-red-50 to-pink-50 rounded-xl p-6 border border-red-200 mb-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="flex items-center">
+                                        <span class="text-3xl mr-3">🩸</span>
+                                        <div>
+                                            <p class="text-sm text-gray-600">Tipo Sanguíneo</p>
+                                            <p class="text-xl font-bold text-red-600" id="fichaTipoSanguineoDisplay">-</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <span class="text-3xl mr-3">⚠️</span>
+                                        <div>
+                                            <p class="text-sm text-gray-600">Alergias</p>
+                                            <p class="text-lg font-semibold text-gray-800" id="fichaAlergias">-</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <span class="text-3xl mr-3">🏥</span>
+                                        <div>
+                                            <p class="text-sm text-gray-600">Doenças Pré-existentes</p>
+                                            <p class="text-lg font-semibold text-gray-800" id="fichaDoencas">-</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <span class="text-3xl mr-3">💊</span>
+                                        <div>
+                                            <p class="text-sm text-gray-600">Medicamentos</p>
+                                            <p class="text-lg font-semibold text-gray-800" id="fichaMedicamentos">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 pt-4 border-t border-red-200">
+                                    <div class="flex items-center">
+                                        <span class="text-3xl mr-3">📞</span>
+                                        <div>
+                                            <p class="text-sm text-gray-600">Contato de Emergência</p>
+                                            <p class="text-lg font-semibold text-gray-800"><span id="fichaContatoNome">-</span> - <span id="fichaContatoTelefone">-</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 pt-4 border-t border-red-200" id="fichaObservacoesContainer">
+                                    <p class="text-sm text-gray-600">📝 Observações</p>
+                                    <p class="text-gray-800" id="fichaObservacoes">-</p>
+                                </div>
+                                <div class="mt-4 pt-4 border-t border-red-200">
+                                    <p class="text-sm text-gray-600">📅 Última atualização</p>
+                                    <p class="text-gray-800" id="fichaDataAtualizacao">-</p>
+                                </div>
+                            </div>
+                            <button onclick="editarFicha()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition">✏️ Editar ficha</button>
+                        </div>
+
+                        <!-- Formulário de Ficha Médica -->
+                        <form id="formFichaMedica" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Tipo Sanguíneo</label>
+                                    <select id="fichaTipoSanguineoInput" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione...</option>
+                                        <option value="A+">A+</option>
+                                        <option value="A-">A-</option>
+                                        <option value="B+">B+</option>
+                                        <option value="B-">B-</option>
+                                        <option value="AB+">AB+</option>
+                                        <option value="AB-">AB-</option>
+                                        <option value="O+">O+</option>
+                                        <option value="O-">O-</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Alergias</label>
+                                <textarea id="fichaAlergiasInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Liste suas alergias (medicamentos, alimentos, etc.)"></textarea>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Doenças Pré-existentes</label>
+                                <textarea id="fichaDoencasInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Liste doenças crônicas ou condições de saúde"></textarea>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Medicamentos em Uso</label>
+                                <textarea id="fichaMedicamentosInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Liste medicamentos que você usa regularmente"></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Contato de Emergência - Nome</label>
+                                    <input type="text" id="fichaContatoNomeInput" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Nome da pessoa para contato">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Contato de Emergência - Telefone</label>
+                                    <input type="tel" id="fichaContatoTelefoneInput" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="(11) 99999-9999">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Observações Adicionais</label>
+                                <textarea id="fichaObservacoesInput" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Outras informações relevantes para emergências"></textarea>
+                            </div>
+
+                            <div class="flex space-x-4">
+                                <button type="submit" class="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition">💾 Salvar Ficha</button>
+                                <button type="button" onclick="cancelarEdicao()" class="flex-1 bg-gray-400 text-white py-2 rounded-lg font-semibold hover:bg-gray-500 transition hidden" id="btnCancelarEdicao">Cancelar</button>
+                            </div>
+                        </form>
+                        
+                        <div id="mensagemFicha" class="mt-4 p-3 rounded-lg text-center hidden"></div>
+                    </div>
+                </div>
+
+                <!-- ABA 5: HISTÓRICO -->
+                <div id="abaHistorico" class="aba-conteudo hidden">
+                    <div class="bg-white rounded-lg shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Histórico de Atividades</h2>
+                        
+                        <!-- Denúncias -->
+                        <div class="mb-8">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">📋 Denúncias</h3>
+                            <div id="listaDenuncias" class="space-y-3">
+                                <p class="text-gray-500">Carregando...</p>
+                            </div>
+                        </div>
+
+                        <!-- Serviços Acionados -->
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">🚑 Serviços Acionados</h3>
+                            <div id="listaServicos" class="space-y-3">
+                                <p class="text-gray-500">Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ABA 6: ADMIN -->
+                <div id="abaAdmin" class="aba-conteudo hidden">
+                    <div class="bg-white rounded-lg shadow-lg p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">⚙️ Painel Administrativo</h2>
+                            <button onclick="carregarAdmin()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition">🔄 Atualizar</button>
+                        </div>
+                        
+                        <!-- Estatísticas -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-blue-100 rounded-lg p-4 text-center">
+                                <p class="text-3xl font-bold text-blue-600" id="totalDenuncias">0</p>
+                                <p class="text-gray-700 font-semibold">Denúncias</p>
+                            </div>
+                            <div class="bg-green-100 rounded-lg p-4 text-center">
+                                <p class="text-3xl font-bold text-green-600" id="totalServicos">0</p>
+                                <p class="text-gray-700 font-semibold">Serviços</p>
+                            </div>
+                            <div class="bg-purple-100 rounded-lg p-4 text-center">
+                                <p class="text-3xl font-bold text-purple-600" id="totalUsuarios">0</p>
+                                <p class="text-gray-700 font-semibold">Usuários</p>
+                            </div>
+                        </div>
+
+                        <!-- Denúncias de Todos os Usuários -->
+                        <div class="mb-8">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">📋 Todas as Denúncias</h3>
+                            <div id="listaAdminDenuncias" class="space-y-3">
+                                <p class="text-gray-500">Carregando dados...</p>
+                            </div>
+                        </div>
+
+                        <!-- Serviços de Todos os Usuários -->
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">🚑 Todos os Serviços Acionados</h3>
+                            <div id="listaAdminServicos" class="space-y-3">
+                                <p class="text-gray-500">Carregando dados...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
