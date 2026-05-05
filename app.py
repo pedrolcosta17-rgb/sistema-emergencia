@@ -156,6 +156,11 @@ def init_db():
         cursor.execute('ALTER TABLE denuncias ADD COLUMN foto TEXT')
         print('✅ Coluna foto adicionada à tabela denuncias')
 
+    # Migração: Adicionar coluna finalizado na tabela denuncias (se não existir)
+    if 'finalizado' not in colunas_denuncias:
+        cursor.execute('ALTER TABLE denuncias ADD COLUMN finalizado INTEGER DEFAULT 0')
+        print('✅ Coluna finalizado adicionada à tabela denuncias')
+
     # Migração: Adicionar colunas de geocodificação na tabela servicos (se não existirem)
     cursor.execute("PRAGMA table_info(servicos)")
     colunas_servicos = [col[1] for col in cursor.fetchall()]
@@ -165,6 +170,11 @@ def init_db():
         if coluna not in colunas_servicos:
             cursor.execute(f'ALTER TABLE servicos ADD COLUMN {coluna} TEXT')
             print(f'✅ Coluna {coluna} adicionada à tabela servicos')
+
+    # Migração: Adicionar coluna finalizado na tabela servicos (se não existir)
+    if 'finalizado' not in colunas_servicos:
+        cursor.execute('ALTER TABLE servicos ADD COLUMN finalizado INTEGER DEFAULT 0')
+        print('✅ Coluna finalizado adicionada à tabela servicos')
 
     db.commit()
     db.close()
@@ -773,11 +783,11 @@ def historico():
     cursor.execute('SELECT nome FROM usuarios WHERE id = ?', (session['user_id'],))
     usuario = cursor.fetchone()
 
-    cursor.execute('SELECT id, descricao, foto, data FROM denuncias WHERE usuario_id = ? ORDER BY data DESC',
+    cursor.execute('SELECT id, descricao, foto, data, finalizado FROM denuncias WHERE usuario_id = ? ORDER BY data DESC',
                    (session['user_id'],))
     denuncias = [dict(row) for row in cursor.fetchall()]
 
-    cursor.execute('SELECT id, tipo, latitude, longitude, rua, bairro, cidade, estado, cep, data FROM servicos WHERE usuario_id = ? ORDER BY data DESC',
+    cursor.execute('SELECT id, tipo, latitude, longitude, rua, bairro, cidade, estado, cep, data, finalizado FROM servicos WHERE usuario_id = ? ORDER BY data DESC',
                    (session['user_id'],))
     servicos = [dict(row) for row in cursor.fetchall()]
     db.close()
@@ -840,7 +850,7 @@ def admin_dados():
     
     # Buscar todas as denúncias com nome do usuário e endereço (incluindo foto)
     cursor.execute('''
-        SELECT d.id, d.descricao, d.foto, d.data, u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco, u.telefone as usuario_telefone,
+        SELECT d.id, d.descricao, d.foto, d.data, d.finalizado, u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco, u.telefone as usuario_telefone,
                f.tipo_sanguineo, f.alergias, f.doencas, f.medicamentos, f.contato_nome, f.contato_telefone
         FROM denuncias d
         JOIN usuarios u ON d.usuario_id = u.id
@@ -853,7 +863,7 @@ def admin_dados():
     # BUSCAR SERVIÇOS COM JOIN - dados atuais DA FICHA + snapshot
     # =====================================================================
     cursor.execute('''
-        SELECT s.id, s.tipo, s.latitude, s.longitude, s.rua, s.bairro, s.cidade, s.estado, s.cep, s.data, 
+        SELECT s.id, s.tipo, s.latitude, s.longitude, s.rua, s.bairro, s.cidade, s.estado, s.cep, s.data, s.finalizado, 
                u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco, u.telefone as usuario_telefone,
                -- Snapshot salvo no momento do acionamento
                s.ficha_tipo_sanguineo, s.ficha_alergias, s.ficha_doencas, s.ficha_medicamentos,
@@ -1004,6 +1014,44 @@ def admin_dados():
             'total_usuarios': total_usuarios
         }
     })
+
+@app.route('/admin/finalizar-denuncia/<int:denuncia_id>', methods=['POST'])
+def finalizar_denuncia(denuncia_id):
+    """Marca uma denúncia como finalizada"""
+    if 'user_id' not in session:
+        return jsonify({'sucesso': False, 'erro': 'Usuário não autenticado'}), 401
+    
+    if not session.get('is_admin', 0):
+        return jsonify({'sucesso': False, 'erro': 'Acesso negado. Apenas administradores.'}), 403
+    
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('UPDATE denuncias SET finalizado = 1 WHERE id = ?', (denuncia_id,))
+        db.commit()
+        db.close()
+        return jsonify({'sucesso': True, 'mensagem': 'Denúncia marcada como finalizada'})
+    except Exception as e:
+        return jsonify({'sucesso': False, 'erro': f'Erro ao finalizar denúncia: {str(e)}'}), 500
+
+@app.route('/admin/finalizar-servico/<int:servico_id>', methods=['POST'])
+def finalizar_servico(servico_id):
+    """Marca um serviço como finalizado"""
+    if 'user_id' not in session:
+        return jsonify({'sucesso': False, 'erro': 'Usuário não autenticado'}), 401
+    
+    if not session.get('is_admin', 0):
+        return jsonify({'sucesso': False, 'erro': 'Acesso negado. Apenas administradores.'}), 403
+    
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('UPDATE servicos SET finalizado = 1 WHERE id = ?', (servico_id,))
+        db.commit()
+        db.close()
+        return jsonify({'sucesso': True, 'mensagem': 'Serviço marcado como finalizado'})
+    except Exception as e:
+        return jsonify({'sucesso': False, 'erro': f'Erro ao finalizar serviço: {str(e)}'}), 500
 
 # ============================================================================
 # ROTAS DE ARQUIVOS (UPLOADS)

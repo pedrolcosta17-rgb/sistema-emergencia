@@ -860,14 +860,17 @@ async function carregarAdmin() {
             // Preenche denúncias de todos os usuários
             const listaAdminDenuncias = document.getElementById('listaAdminDenuncias');
             if (data.denuncias.length > 0) {
-                listaAdminDenuncias.innerHTML = data.denuncias.map(d => `
+                listaAdminDenuncias.innerHTML = data.denuncias.filter(d => !d.finalizado).map(d => `
                     <div class="bg-red-50 p-4 rounded-lg border-l-4 border-red-600">
                         <p class="font-semibold text-gray-800">${d.descricao}</p>
                         ${d.foto ? `<img src="/uploads/${d.foto}" class="mt-2 max-h-40 rounded-lg cursor-pointer" alt="Evidência" onclick="window.open('/uploads/${d.foto}', '_blank')">` : ''}
                         <p class="text-sm text-gray-600 mt-2">👤 Usuário: <span class="font-semibold">${d.usuario_nome}</span> (${d.usuario_email})</p>
                         <p class="text-sm text-gray-600">📍 Endereço: ${d.usuario_endereco || 'Não cadastrado'}</p>
                         <p class="text-sm text-gray-600">📅 ${new Date(d.data).toLocaleString('pt-BR')}</p>
-                        ${d.usuario_telefone ? `<button onclick="enviarWhatsApp('${d.usuario_telefone}', '${d.usuario_nome}')" class="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">📲 Enviar WhatsApp</button>` : ''}
+                        <div class="mt-2 flex gap-2">
+                            ${d.usuario_telefone ? `<button onclick="enviarWhatsApp('${d.usuario_telefone}', '${d.usuario_nome}')" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">📲 WhatsApp</button>` : ''}
+                            <button onclick="finalizarDenuncia(${d.id})" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm">✔ Finalizar</button>
+                        </div>
                     </div>
                 `).join('');
             } else {
@@ -876,8 +879,9 @@ async function carregarAdmin() {
 
             // Preenche serviços de todos os usuários
             const listaAdminServicos = document.getElementById('listaAdminServicos');
-            if (data.servicos.length > 0) {
-                listaAdminServicos.innerHTML = data.servicos.map(s => {
+            const servicosAtivos = data.servicos.filter(s => !s.finalizado);
+            if (servicosAtivos.length > 0) {
+                listaAdminServicos.innerHTML = servicosAtivos.map(s => {
                     const icon = {
                         'Polícia': '🚔',
                         'SAMU': '🚑',
@@ -980,12 +984,15 @@ async function carregarAdmin() {
                             <p class="text-sm text-gray-600">📍 Localização: ${localizacaoExibir}</p>
                             <p class="text-sm text-gray-600">🕐 ${servicoDataFormatada}</p>
                             ${fichaHtml}
-                            ${s.usuario_telefone ? `<button onclick="enviarWhatsApp('${s.usuario_telefone}', '${s.usuario_nome}')" class="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">📲 Enviar WhatsApp</button>` : ''}
+                            <div class="mt-2 flex gap-2">
+                                ${s.usuario_telefone ? `<button onclick="enviarWhatsApp('${s.usuario_telefone}', '${s.usuario_nome}')" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">📲 WhatsApp</button>` : ''}
+                                <button onclick="finalizarServico(${s.id})" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm">✔ Finalizar</button>
+                            </div>
                         </div>
                     `;
                 }).join('');
             } else {
-                listaAdminServicos.innerHTML = '<p class="text-gray-500">Nenhum serviço acionado no sistema</p>';
+                listaAdminServicos.innerHTML = '<p class="text-gray-500">Nenhum serviço ativo no sistema</p>';
             }
         } else {
             alert('Erro ao carregar dados admin: ' + data.erro);
@@ -1321,27 +1328,171 @@ window.acionarServico = async function(servico) {
 };
 
 // ============================================================================
-// FUNCIONALIDADE 3: BOTÃO WHATSAPP NO ADMIN
+// FUNCIONALIDADE WHATSAPP PARA USUÁRIO E ADMIN
 // ============================================================================
 
 /**
- * Abre link do WhatsApp para enviar mensagem ao usuário
+ * Abre WhatsApp para falar com o atendimento (admin)
  */
-function enviarWhatsApp(telefone, nome) {
-    // Limpa o telefone (remove caracteres não numéricos)
-    const telefoneLimpo = telefone.replace(/\D/g, '');
-    
-    // Monta a mensagem padrão
-    const mensagem = `Olá ${nome}, estamos entrando em contato sobre sua solicitação no sistema de emergência.`;
-    
-    // Codifica a mensagem para URL
-    const mensagemCodificada = encodeURIComponent(mensagem);
-    
-    // Monta o link do WhatsApp
-    const linkWhatsApp = `https://wa.me/55${telefoneLimpo}?text=${mensagemCodificada}`;
-    
-    // Abre em nova aba
-    window.open(linkWhatsApp, '_blank');
+function abrirWhatsApp() {
+    const mensagem = encodeURIComponent('Olá, sou usuário do sistema de emergência e preciso de atendimento.');
+    const link = `https://wa.me/5511999999999?text=${mensagem}`;
+    window.open(link, '_blank');
+}
+
+/**
+ * Abre WhatsApp para admin (mesmo número, mas talvez mensagem diferente)
+ */
+function abrirWhatsAppAdmin() {
+    const mensagem = encodeURIComponent('Olá, sou administrador do sistema de emergência.');
+    const link = `https://wa.me/5511999999999?text=${mensagem}`;
+    window.open(link, '_blank');
+}
+
+// ============================================================================
+// FUNCIONALIDADE ABA ADMIN ATIVOS/FINALIZADOS
+// ============================================================================
+
+/**
+ * Mostra aba específica no admin
+ */
+function mostrarAdminAba(aba) {
+    // Esconde todas as abas admin
+    const abas = document.querySelectorAll('.admin-conteudo');
+    abas.forEach(a => a.classList.add('hidden'));
+
+    // Remove ativa de todos os botões
+    const botoes = document.querySelectorAll('.admin-aba-btn');
+    botoes.forEach(btn => btn.classList.remove('bg-blue-600'));
+    botoes.forEach(btn => btn.classList.add('bg-gray-400'));
+
+    // Mostra aba selecionada
+    document.getElementById('admin' + aba.charAt(0).toUpperCase() + aba.slice(1)).classList.remove('hidden');
+
+    // Ativa botão
+    const btn = document.querySelector(`[data-admin-aba="${aba}"]`);
+    if (btn) {
+        btn.classList.remove('bg-gray-400');
+        btn.classList.add('bg-blue-600');
+    }
+
+    // Carrega dados se necessário
+    if (aba === 'finalizados') {
+        carregarAdminFinalizados();
+    }
+}
+
+/**
+ * Carrega dados dos finalizados
+ */
+async function carregarAdminFinalizados() {
+    try {
+        const response = await fetch('/admin/dados', {
+            credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.sucesso) {
+            // Filtra apenas finalizados
+            const denunciasFinalizadas = data.denuncias.filter(d => d.finalizado);
+            const servicosFinalizados = data.servicos.filter(s => s.finalizado);
+
+            // Renderiza denuncias finalizadas
+            const listaDenuncias = document.getElementById('listaAdminDenunciasFinalizadas');
+            if (denunciasFinalizadas.length > 0) {
+                listaDenuncias.innerHTML = denunciasFinalizadas.map(d => {
+                    const dataFormatada = new Date(d.data).toLocaleString('pt-BR');
+                    const fotoHtml = d.foto ? `<br><img src="/uploads/${d.foto}" alt="Foto" class="max-w-xs rounded-lg mt-2">` : '';
+                    return `
+                        <div class="bg-green-50 p-4 rounded-lg border-l-4 border-green-600">
+                            <p class="font-semibold text-gray-800">📋 ${d.descricao}</p>
+                            <p class="text-sm text-gray-600 mt-2">👤 Usuário: <span class="font-semibold">${d.usuario_nome}</span> (${d.usuario_email})</p>
+                            <p class="text-sm text-gray-600">📍 Endereço: ${d.usuario_endereco || 'Não cadastrado'}</p>
+                            <p class="text-sm text-gray-600">🕐 ${dataFormatada}</p>
+                            ${fotoHtml}
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 mt-2">✔ Finalizada</span>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listaDenuncias.innerHTML = '<p class="text-gray-500">Nenhuma denúncia finalizada</p>';
+            }
+
+            // Renderiza servicos finalizados
+            const listaServicos = document.getElementById('listaAdminServicosFinalizados');
+            if (servicosFinalizados.length > 0) {
+                listaServicos.innerHTML = servicosFinalizados.map(s => {
+                    const colorClass = s.tipo === 'Polícia' ? 'border-red-600' :
+                                     s.tipo === 'SAMU' ? 'border-yellow-600' :
+                                     s.tipo === 'Bombeiros' ? 'border-orange-600' : 'border-purple-600';
+                    const icon = s.tipo === 'Polícia' ? '🚔' :
+                               s.tipo === 'SAMU' ? '🚑' :
+                               s.tipo === 'Bombeiros' ? '🚒' : '🛡️';
+                    const servicoDataFormatada = new Date(s.data).toLocaleString('pt-BR');
+
+                    return `
+                        <div class="bg-green-50 p-4 rounded-lg border-l-4 ${colorClass}">
+                            <p class="font-semibold text-gray-800">${icon} ${s.tipo}</p>
+                            <p class="text-sm text-gray-600 mt-2">👤 Usuário: <span class="font-semibold">${s.usuario_nome}</span> (${s.usuario_email})</p>
+                            <p class="text-sm text-gray-600">📍 Endereço: ${s.usuario_endereco || 'Não cadastrado'}</p>
+                            <p class="text-sm text-gray-600">🕐 ${servicoDataFormatada}</p>
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 mt-2">✔ Finalizado</span>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listaServicos.innerHTML = '<p class="text-gray-500">Nenhum serviço finalizado</p>';
+            }
+        }
+    } catch (erro) {
+        console.error('Erro ao carregar finalizados:', erro);
+    }
+}
+
+/**
+ * Finaliza uma denúncia
+ */
+async function finalizarDenuncia(id) {
+    if (!confirm('Tem certeza que deseja marcar esta denúncia como finalizada?')) return;
+
+    try {
+        const response = await fetch(`/admin/finalizar-denuncia/${id}`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.sucesso) {
+            alert('Denúncia finalizada com sucesso!');
+            carregarAdmin();
+        } else {
+            alert('Erro: ' + data.erro);
+        }
+    } catch (erro) {
+        alert('Erro na conexão');
+    }
+}
+
+/**
+ * Finaliza um serviço
+ */
+async function finalizarServico(id) {
+    if (!confirm('Tem certeza que deseja marcar este serviço como finalizado?')) return;
+
+    try {
+        const response = await fetch(`/admin/finalizar-servico/${id}`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.sucesso) {
+            alert('Serviço finalizado com sucesso!');
+            carregarAdmin();
+        } else {
+            alert('Erro: ' + data.erro);
+        }
+    } catch (erro) {
+        alert('Erro na conexão');
+    }
 }
 
 // ============================================================================
