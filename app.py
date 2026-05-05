@@ -2,7 +2,7 @@ import os
 import sqlite3
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -23,6 +23,17 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = 'sua_chave_secreta_aqui_mude_em_producao'
+
+# ============================================================================
+# CONFIGURAÇÃO CORS PARA PERMITIR REQUISIÇÕES DO FRONTEND
+# ============================================================================
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5000')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 # ============================================================================
 # CONFIGURAÇÃO DE SESSÃO PERMANENTE
@@ -123,6 +134,21 @@ def init_db():
         )
     ''')
 
+    # =====================================================================
+    # FUNCIONALIDADE 1: LOGIN PERSISTENTE - Tabela de tokens
+    # =====================================================================
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tokens_login (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expiracao TIMESTAMP NOT NULL,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+    ''')
+    print('✅ Tabela tokens_login criada/verificada para login persistente')
+
     # Migração: Adicionar coluna foto na tabela denuncias (se não existir)
     cursor.execute("PRAGMA table_info(denuncias)")
     colunas_denuncias = [col[1] for col in cursor.fetchall()]
@@ -133,7 +159,7 @@ def init_db():
     # Migração: Adicionar colunas de geocodificação na tabela servicos (se não existirem)
     cursor.execute("PRAGMA table_info(servicos)")
     colunas_servicos = [col[1] for col in cursor.fetchall()]
-    colunas_geocode = ['cidade', 'estado']
+    colunas_geocode = ['rua', 'bairro', 'cidade', 'estado', 'cep']
     
     for coluna in colunas_geocode:
         if coluna not in colunas_servicos:
@@ -153,8 +179,8 @@ def allowed_file(filename):
 
 def get_address_from_coords(lat, lon):
     """
-    Converte coordenadas (lat, lon) em endereço usando Nominatim (OpenStreetMap)
-    Retorna: {'cidade': str, 'estado': str} ou None em caso de erro
+    Converte coordenadas (lat, lon) em endereço completo usando Nominatim (OpenStreetMap)
+    Retorna: {'rua': str, 'bairro': str, 'cidade': str, 'estado': str, 'cep': str} ou None em caso de erro
     """
     if lat is None or lon is None:
         return None
@@ -180,21 +206,26 @@ def get_address_from_coords(lat, lon):
         if data:
             address = data.get('address', {})
             
-            # Tenta obter cidade (city, town, village, municipality)
+            # Extrair todos os componentes do endereço
+            rua = address.get('road') or address.get('street') or address.get('pedestrian') or address.get('path')
+            bairro = address.get('suburb') or address.get('neighbourhood') or address.get('district')
             cidade = address.get('city') or address.get('town') or address.get('village') or address.get('municipality')
-            
-            # Tenta obter estado (state)
             estado = address.get('state')
+            cep = address.get('postcode')
             
             # Se não encontrou estado, tenta obter do código do país (BR)
             if not estado and address.get('country_code') == 'br':
                 # Para Brasil, usa o estado como referência regional
                 estado = address.get('county', '').split(' ')[-1] if address.get('county') else None
             
+            # Retorna apenas se tiver pelo menos cidade ou estado
             if cidade or estado:
                 return {
+                    'rua': rua,
+                    'bairro': bairro,
                     'cidade': cidade,
-                    'estado': estado
+                    'estado': estado,
+                    'cep': cep
                 }
         return None
     except Exception as e:
@@ -377,14 +408,33 @@ def login():
         cursor = db.cursor()
         cursor.execute('SELECT id, senha, is_admin FROM usuarios WHERE email = ?', (email,))
         user = cursor.fetchone()
-        db.close()
         
         if user and check_password_hash(user['senha'], senha):
             session['user_id'] = user['id']
             session['is_admin'] = user['is_admin'] if 'is_admin' in user.keys() else 0
             session.permanent = True  # Mantém sessão por 7 dias
-            return jsonify({'sucesso': True, 'mensagem': 'Login realizado com sucesso!'})
+            
+            # =====================================================================
+            # FUNCIONALIDADE 1: GERAR TOKEN PARA LOGIN PERSISTENTE
+            # =====================================================================
+            token = str(uuid.uuid4())
+            expiracao = datetime.now() + timedelta(days=30)  # Token válido por 30 dias
+            
+            # Salvar token no banco
+            cursor.execute('''
+                INSERT OR REPLACE INTO tokens_login (usuario_id, token, expiracao)
+                VALUES (?, ?, ?)
+            ''', (user['id'], token, expiracao))
+            db.commit()
+            db.close()
+            
+            return jsonify({
+                'sucesso': True, 
+                'mensagem': 'Login realizado com sucesso!',
+                'token': token  # Retorna token para o frontend salvar no localStorage
+            })
         
+        db.close()
         return jsonify({'sucesso': False, 'erro': 'Email ou senha inválidos'}), 401
     
     return render_template('index.html')
@@ -394,6 +444,46 @@ def logout():
     session.pop('is_admin', None)
     session.clear()
     return redirect(url_for('index'))
+
+# =====================================================================
+# FUNCIONALIDADE 1: ROTA PARA LOGIN AUTOMÁTICO VIA TOKEN
+# =====================================================================
+@app.route('/auto-login', methods=['GET'])
+def auto_login():
+    """Verifica token enviado pelo frontend e faz login automático"""
+    token = request.args.get('token') or request.headers.get('Authorization', '').replace('Bearer ', '')
+    
+    if not token:
+        return jsonify({'sucesso': False, 'erro': 'Token não fornecido'}), 400
+    
+    db = get_db()
+    cursor = db.cursor()
+    
+    # Buscar token válido (não expirado)
+    cursor.execute('''
+        SELECT t.usuario_id, u.is_admin, u.nome
+        FROM tokens_login t
+        JOIN usuarios u ON t.usuario_id = u.id
+        WHERE t.token = ? AND t.expiracao > ?
+    ''', (token, datetime.now()))
+    
+    token_data = cursor.fetchone()
+    db.close()
+    
+    if token_data:
+        # Token válido - criar sessão
+        session['user_id'] = token_data['usuario_id']
+        session['is_admin'] = token_data['is_admin']
+        session.permanent = True
+        
+        return jsonify({
+            'sucesso': True,
+            'mensagem': 'Login automático realizado!',
+            'nome': token_data['nome'],
+            'is_admin': bool(token_data['is_admin'])
+        })
+    else:
+        return jsonify({'sucesso': False, 'erro': 'Token inválido ou expirado'}), 401
 
 @app.route('/denuncia', methods=['POST'])
 def denuncia():
@@ -464,14 +554,21 @@ def servico():
         cursor = db.cursor()
         
         # =====================================================================
-        # GEOCODIFICAÇÃO REVERSA - Converter lat/long em endereço
+        # GEOCODIFICAÇÃO REVERSA - Converter lat/long em endereço completo
         # =====================================================================
-        endereco = None
+        rua = None
+        bairro = None
+        cidade = None
+        estado = None
+        cep = None
         if latitude and longitude:
             endereco = get_address_from_coords(latitude, longitude)
-        
-        cidade = endereco['cidade'] if endereco else None
-        estado = endereco['estado'] if endereco else None
+            if endereco:
+                rua = endereco.get('rua')
+                bairro = endereco.get('bairro')
+                cidade = endereco.get('cidade')
+                estado = endereco.get('estado')
+                cep = endereco.get('cep')
         
         # =====================================================================
         # SNAPSHOT DA FICHA MÉDICA NO MOMENTO DO ACIONAMENTO
@@ -503,20 +600,23 @@ def servico():
             ficha_contato_telefone = None
             ficha_atualizado_em = None
         
-        # Inserir serviço com snapshot da ficha médica + geocodificação
+        # Inserir serviço com snapshot da ficha médica + geocodificação completa
         cursor.execute('''
             INSERT INTO servicos 
-            (usuario_id, tipo, latitude, longitude, cidade, estado,
+            (usuario_id, tipo, latitude, longitude, rua, bairro, cidade, estado, cep,
              ficha_tipo_sanguineo, ficha_alergias, ficha_doencas, ficha_medicamentos,
              ficha_contato_nome, ficha_contato_telefone, ficha_atualizado_em)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             session['user_id'], 
             tipo, 
             latitude, 
             longitude,
+            rua,
+            bairro,
             cidade,
             estado,
+            cep,
             ficha_tipo_sanguineo,
             ficha_alergias,
             ficha_doencas,
@@ -527,7 +627,17 @@ def servico():
         ))
         db.commit()
         db.close()
-        return jsonify({'sucesso': True, 'mensagem': f'Serviço de {tipo} acionado com sucesso! Aguarde contato.'})
+        return jsonify({
+            'sucesso': True, 
+            'mensagem': f'Serviço de {tipo} acionado com sucesso! Aguarde contato.',
+            'endereco': {
+                'rua': rua,
+                'bairro': bairro,
+                'cidade': cidade,
+                'estado': estado,
+                'cep': cep
+            }
+        })
     except Exception as e:
         return jsonify({'sucesso': False, 'erro': f'Erro ao acionar serviço: {str(e)}'}), 500
 
@@ -667,7 +777,7 @@ def historico():
                    (session['user_id'],))
     denuncias = [dict(row) for row in cursor.fetchall()]
 
-    cursor.execute('SELECT id, tipo, latitude, longitude, cidade, estado, data FROM servicos WHERE usuario_id = ? ORDER BY data DESC',
+    cursor.execute('SELECT id, tipo, latitude, longitude, rua, bairro, cidade, estado, cep, data FROM servicos WHERE usuario_id = ? ORDER BY data DESC',
                    (session['user_id'],))
     servicos = [dict(row) for row in cursor.fetchall()]
     db.close()
@@ -730,7 +840,7 @@ def admin_dados():
     
     # Buscar todas as denúncias com nome do usuário e endereço (incluindo foto)
     cursor.execute('''
-        SELECT d.id, d.descricao, d.foto, d.data, u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco,
+        SELECT d.id, d.descricao, d.foto, d.data, u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco, u.telefone as usuario_telefone,
                f.tipo_sanguineo, f.alergias, f.doencas, f.medicamentos, f.contato_nome, f.contato_telefone
         FROM denuncias d
         JOIN usuarios u ON d.usuario_id = u.id
@@ -743,8 +853,8 @@ def admin_dados():
     # BUSCAR SERVIÇOS COM JOIN - dados atuais DA FICHA + snapshot
     # =====================================================================
     cursor.execute('''
-        SELECT s.id, s.tipo, s.latitude, s.longitude, s.cidade, s.estado, s.data, 
-               u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco,
+        SELECT s.id, s.tipo, s.latitude, s.longitude, s.rua, s.bairro, s.cidade, s.estado, s.cep, s.data, 
+               u.nome as usuario_nome, u.email as usuario_email, u.endereco as usuario_endereco, u.telefone as usuario_telefone,
                -- Snapshot salvo no momento do acionamento
                s.ficha_tipo_sanguineo, s.ficha_alergias, s.ficha_doencas, s.ficha_medicamentos,
                s.ficha_contato_nome, s.ficha_contato_telefone, s.ficha_atualizado_em,
@@ -806,10 +916,39 @@ def admin_dados():
         # Se todos os campos forem iguais → atualizada
         return 'atualizada'
     
+    # =====================================================================
+    # GEOCODIFICAÇÃO REVERSA COM FALLBACK - Converter lat/lon se necessário
+    # =====================================================================
+    def ensure_cidade_estado(servico):
+        """
+        Garante que cidade e estado existem.
+        Se não existirem, tenta converter de lat/lon.
+        """
+        # Se já tem cidade ou estado, retorna como está
+        if servico.get('cidade') or servico.get('estado'):
+            return servico
+        
+        # Se não tem lat/lon, não há como converter
+        if not servico.get('latitude') or not servico.get('longitude'):
+            return servico
+        
+        # Tenta converter
+        endereco = get_address_from_coords(servico['latitude'], servico['longitude'])
+        if endereco:
+            servico['cidade'] = endereco.get('cidade')
+            servico['estado'] = endereco.get('estado')
+        
+        return servico
+    
     # Processar cada serviço
     servicos = []
     for row in servicos_raw:
         servico = dict(row)
+        
+        # =====================================================================
+        # APLICAR FALLBACK DE GEOCODIFICAÇÃO
+        # =====================================================================
+        servico = ensure_cidade_estado(servico)
         
         # Dados atuais da ficha (para retorno no JSON)
         dados_atuais = {

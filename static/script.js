@@ -29,6 +29,12 @@ function mostrarDashboard() {
     document.getElementById('telaDashboard').classList.remove('hidden');
 }
 
+const authState = {
+    logado: false,
+    tentandoAutoLogin: false,
+    tokenPresente: false
+};
+
 /**
  * Mostra uma aba específica do dashboard
  */
@@ -70,6 +76,69 @@ function mostrarAba(abaName) {
 }
 
 // ============================================================================
+// FUNCIONALIDADE 1: VERIFICAÇÃO DE LOGIN AUTOMÁTICO AO CARREGAR PÁGINA
+// ============================================================================
+
+/**
+ * Verifica se existe token salvo e tenta login automático
+ */
+async function verificarLoginAutomatico() {
+    const token = localStorage.getItem('auth_token');
+    authState.tokenPresente = !!token;
+    authState.tentandoAutoLogin = true;
+    
+    if (!token) {
+        console.log('🔍 Nenhum token encontrado no localStorage');
+        authState.tentandoAutoLogin = false;
+        return false;
+    }
+    
+    try {
+        console.log('🔄 Tentando login automático com token...');
+        const response = await fetch(`/auto-login?token=${encodeURIComponent(token)}`, {
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.sucesso) {
+            authState.logado = true;
+            console.log('✅ Login automático realizado:', data.nome);
+            
+            // Define o nome do usuário logado
+            document.getElementById('nomeUsuarioSpan').textContent = data.nome;
+            
+            if (data.is_admin) {
+                document.getElementById('btnAdmin').classList.remove('hidden');
+                document.getElementById('btnHistorico').classList.add('hidden');
+                mostrarDashboard();
+                mostrarAba('admin');
+            } else {
+                document.getElementById('btnAdmin').classList.add('hidden');
+                document.getElementById('btnHistorico').classList.remove('hidden');
+                mostrarDashboard();
+                // Usuário comum: vai direto para dashboard principal (acionar serviço)
+                mostrarAba('acionarServico');
+            }
+            authState.tentandoAutoLogin = false;
+            return true;
+        } else {
+            console.log('❌ Token inválido, removendo do localStorage');
+            localStorage.removeItem('auth_token');
+            authState.logado = false;
+            authState.tentandoAutoLogin = false;
+            return false;
+        }
+    } catch (erro) {
+        console.error('Erro no login automático:', erro);
+        localStorage.removeItem('auth_token');
+        authState.logado = false;
+        authState.tentandoAutoLogin = false;
+        return false;
+    }
+}
+
+// ============================================================================
 // AUTENTICAÇÃO
 // ============================================================================
 
@@ -97,6 +166,14 @@ document.getElementById('formLogin').addEventListener('submit', async (e) => {
             msgDiv.textContent = '✅ ' + data.mensagem;
             msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
             msgDiv.classList.remove('hidden');
+
+            // =====================================================================
+            // FUNCIONALIDADE 1: SALVAR TOKEN NO LOCALSTORAGE PARA LOGIN PERSISTENTE
+            // =====================================================================
+            if (data.token) {
+                localStorage.setItem('auth_token', data.token);
+                console.log('🔑 Token salvo no localStorage para login persistente');
+            }
 
             // Limpa campos de login por segurança
             document.getElementById('loginEmail').value = '';
@@ -228,6 +305,10 @@ document.getElementById('formCadastro').addEventListener('submit', async (e) => 
  * Faz logout
  */
 function logout() {
+    // Remove o token persistente para evitar auto-login após logout explícito
+    localStorage.removeItem('auth_token');
+    authState.logado = false;
+    authState.tokenPresente = false;
     window.location.href = '/logout';
 }
 
@@ -575,7 +656,17 @@ function acionarServico(servico) {
                     const data = await response.json();
 
                     if (data.sucesso) {
-                        msgDiv.textContent = '✅ ' + data.mensagem;
+                        // =====================================================================
+                        // FUNCIONALIDADE 2: MOSTRAR LOCALIZAÇÃO NA TELA
+                        // =====================================================================
+                        let mensagemLocalizacao = '';
+                        if (data.cidade && data.estado && data.cidade !== 'Não identificado' && data.estado !== 'Não identificado') {
+                            mensagemLocalizacao = ` Localização: ${data.cidade} - ${data.estado}`;
+                        } else {
+                            mensagemLocalizacao = ' Localização: Não identificada';
+                        }
+                        
+                        msgDiv.textContent = '✅ ' + data.mensagem + mensagemLocalizacao;
                         msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
                         msgDiv.classList.remove('hidden');
                     } else {
@@ -700,7 +791,16 @@ async function carregarHistorico() {
                         <div class="bg-gray-100 p-4 rounded-lg border-l-4 border-green-600">
                             <p class="font-semibold text-gray-800">${icon} ${s.tipo}</p>
                             <p class="text-sm text-gray-600 mt-2">
-                                📍 Localização: ${s.latitude ? s.latitude.toFixed(4) + ', ' + s.longitude.toFixed(4) : 'Não capturada'}
+                                📍 Localização: ${
+                                    (s.rua || s.bairro || s.cidade || s.estado) 
+                                        ? [
+                                            s.rua,
+                                            s.bairro,
+                                            s.cidade && s.estado ? `${s.cidade} - ${s.estado}` : (s.cidade || s.estado),
+                                            s.cep ? `CEP: ${s.cep}` : null
+                                        ].filter(Boolean).join(', ')
+                                        : (s.latitude && s.longitude ? `${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)}` : 'Não capturada')
+                                }
                             </p>
                             <p class="text-sm text-gray-600">🕐 ${new Date(s.data).toLocaleString('pt-BR')}</p>
                         </div>
@@ -767,6 +867,7 @@ async function carregarAdmin() {
                         <p class="text-sm text-gray-600 mt-2">👤 Usuário: <span class="font-semibold">${d.usuario_nome}</span> (${d.usuario_email})</p>
                         <p class="text-sm text-gray-600">📍 Endereço: ${d.usuario_endereco || 'Não cadastrado'}</p>
                         <p class="text-sm text-gray-600">📅 ${new Date(d.data).toLocaleString('pt-BR')}</p>
+                        ${d.usuario_telefone ? `<button onclick="enviarWhatsApp('${d.usuario_telefone}', '${d.usuario_nome}')" class="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">📲 Enviar WhatsApp</button>` : ''}
                     </div>
                 `).join('');
             } else {
@@ -790,14 +891,19 @@ async function carregarAdmin() {
                         'Defesa Civil': 'border-purple-600'
                     }[s.tipo] || 'border-green-600';
 
-                    // Formata localização com cidade/estado
+                    // Formata localização completa
                     const localizacao = s.latitude && s.longitude 
                         ? `${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)}` 
                         : 'Não capturada';
                     
-                    // Exibe cidade/estado se disponível
-                    const localizacaoExibir = (s.cidade || s.estado) 
-                        ? `${s.cidade || ''}${s.cidade && s.estado ? ' - ' : ''}${s.estado || ''}` 
+                    // Exibe endereço completo se disponível
+                    const localizacaoExibir = (s.rua || s.bairro || s.cidade || s.estado) 
+                        ? [
+                            s.rua,
+                            s.bairro,
+                            s.cidade && s.estado ? `${s.cidade} - ${s.estado}` : (s.cidade || s.estado),
+                            s.cep ? `CEP: ${s.cep}` : null
+                        ].filter(Boolean).join(', ')
                         : localizacao;
 
                     // =====================================================================
@@ -874,6 +980,7 @@ async function carregarAdmin() {
                             <p class="text-sm text-gray-600">📍 Localização: ${localizacaoExibir}</p>
                             <p class="text-sm text-gray-600">🕐 ${servicoDataFormatada}</p>
                             ${fichaHtml}
+                            ${s.usuario_telefone ? `<button onclick="enviarWhatsApp('${s.usuario_telefone}', '${s.usuario_nome}')" class="mt-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">📲 Enviar WhatsApp</button>` : ''}
                         </div>
                     `;
                 }).join('');
@@ -1214,42 +1321,54 @@ window.acionarServico = async function(servico) {
 };
 
 // ============================================================================
+// FUNCIONALIDADE 3: BOTÃO WHATSAPP NO ADMIN
+// ============================================================================
+
+/**
+ * Abre link do WhatsApp para enviar mensagem ao usuário
+ */
+function enviarWhatsApp(telefone, nome) {
+    // Limpa o telefone (remove caracteres não numéricos)
+    const telefoneLimpo = telefone.replace(/\D/g, '');
+    
+    // Monta a mensagem padrão
+    const mensagem = `Olá ${nome}, estamos entrando em contato sobre sua solicitação no sistema de emergência.`;
+    
+    // Codifica a mensagem para URL
+    const mensagemCodificada = encodeURIComponent(mensagem);
+    
+    // Monta o link do WhatsApp
+    const linkWhatsApp = `https://wa.me/55${telefoneLimpo}?text=${mensagemCodificada}`;
+    
+    // Abre em nova aba
+    window.open(linkWhatsApp, '_blank');
+}
+
+// ============================================================================
 // INICIALIZAÇÃO
 // ============================================================================
 
 /**
  * Verifica se o usuário está logado ao carregar a página
- * Reutiliza a mesma lógica de processarLogin para evitar duplicação
+ * Primeiro tenta login automático com token, depois verifica sessão normal
  */
 window.addEventListener('load', async () => {
     try {
-        const meResponse = await fetch('/me', {
-            credentials: 'include'
-        });
-        const meData = await meResponse.json();
+        // Sempre mostra a tela de login primeiro. O auto-login só deve ocorrer se houver token persistente.
+        mostrarLogin();
+        
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            console.log('ℹ️ Sem token persistente, exibindo login.');
+            return;
+        }
 
-        if (meData.sucesso) {
-            // Define o nome do usuário logado
-            document.getElementById('nomeUsuarioSpan').textContent = meData.nome;
-
-            if (meData.is_admin) {
-                // É admin - mostra botão admin e vai direto para aba admin
-                document.getElementById('btnAdmin').classList.remove('hidden');
-                document.getElementById('btnHistorico').classList.add('hidden');
-                mostrarDashboard();
-                mostrarAba('admin');
-            } else {
-                // Usuário comum - mostra botão histórico
-                document.getElementById('btnAdmin').classList.add('hidden');
-                document.getElementById('btnHistorico').classList.remove('hidden');
-                mostrarDashboard();
-                carregarHistorico();
-            }
-        } else {
+        const loginAutomaticoSucesso = await verificarLoginAutomatico();
+        if (!loginAutomaticoSucesso) {
             mostrarLogin();
         }
     } catch (erro) {
-        // Se der erro, mostra login
+        console.error('Erro na inicialização:', erro);
         mostrarLogin();
     }
 });
