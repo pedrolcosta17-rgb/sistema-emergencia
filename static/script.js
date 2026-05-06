@@ -5,10 +5,15 @@
 /**
  * Mostra a tela de login
  */
+function scrollToTop() {
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+}
+
 function mostrarLogin() {
     document.getElementById('telaLogin').classList.remove('hidden');
     document.getElementById('telaCadastro').classList.add('hidden');
     document.getElementById('telaDashboard').classList.add('hidden');
+    scrollToTop();
 }
 
 /**
@@ -18,6 +23,7 @@ function mostrarCadastro() {
     document.getElementById('telaLogin').classList.add('hidden');
     document.getElementById('telaCadastro').classList.remove('hidden');
     document.getElementById('telaDashboard').classList.add('hidden');
+    scrollToTop();
 }
 
 /**
@@ -27,52 +33,68 @@ function mostrarDashboard() {
     document.getElementById('telaLogin').classList.add('hidden');
     document.getElementById('telaCadastro').classList.add('hidden');
     document.getElementById('telaDashboard').classList.remove('hidden');
+    scrollToTop();
 }
 
 const authState = {
     logado: false,
     tentandoAutoLogin: false,
-    tokenPresente: false
+    tokenPresente: false,
+    isAdmin: false
 };
 
 /**
  * Mostra uma aba específica do dashboard
  */
 function mostrarAba(abaName) {
-    // Esconde todas as abas
+    // Esconde todas as abas com animação
     const abas = document.querySelectorAll('.aba-conteudo');
-    abas.forEach(aba => aba.classList.add('hidden'));
+    abas.forEach(aba => {
+        aba.classList.add('hidden');
+        aba.classList.remove('fade-in');
+    });
 
     // Remove a classe ativa de todos os botões
-    const botoes = document.querySelectorAll('.aba-btn');
-    botoes.forEach(btn => btn.classList.remove('bg-blue-600'));
-    botoes.forEach(btn => btn.classList.add('bg-gray-400'));
+    const botoes = document.querySelectorAll('.nav-tab');
+    botoes.forEach(btn => btn.classList.remove('active'));
 
-    // Mostra a aba selecionada
-    document.getElementById('aba' + abaName.charAt(0).toUpperCase() + abaName.slice(1)).classList.remove('hidden');
-
-    // Ativa o botão correto (verifica se existe para evitar erro)
-    const btn = document.querySelector(`[data-aba="${abaName}"]`);
-    if (btn) {
-        btn.classList.remove('bg-gray-400');
-        btn.classList.add('bg-blue-600');
+    // Mostra a aba selecionada com animação
+    const abaAtiva = document.getElementById('aba' + abaName.charAt(0).toUpperCase() + abaName.slice(1));
+    if (abaAtiva) {
+        abaAtiva.classList.remove('hidden');
+        // Pequeno delay para garantir que a aba seja visível antes da animação
+        setTimeout(() => {
+            abaAtiva.classList.add('fade-in');
+        }, 10);
     }
 
-    // Se for o histórico, carrega os dados
+    // Ativa o botão correto
+    const btn = document.querySelector(`[data-aba="${abaName}"]`);
+    if (btn) {
+        btn.classList.add('active');
+    }
+
+    // Feedback visual adicional
+    if (btn) {
+        btn.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            btn.style.transform = '';
+        }, 150);
+    }
+
+    // Carrega dados específicos da aba
     if (abaName === 'historico') {
         carregarHistorico();
     }
-    // Se for o admin, carrega os dados
     if (abaName === 'admin') {
         carregarAdmin();
     }
-    // Se for ficha médica, carrega os dados
     if (abaName === 'fichaMedica') {
-        // Pequeno delay para garantir que o DOM esteja pronto
         setTimeout(() => {
             carregarFichaMedica();
         }, 50);
     }
+    scrollToTop();
 }
 
 // ============================================================================
@@ -108,7 +130,8 @@ async function verificarLoginAutomatico() {
             // Define o nome do usuário logado
             document.getElementById('nomeUsuarioSpan').textContent = data.nome;
             
-            if (data.is_admin) {
+            authState.isAdmin = !!data.is_admin;
+            if (authState.isAdmin) {
                 document.getElementById('btnAdmin').classList.remove('hidden');
                 document.getElementById('btnHistorico').classList.add('hidden');
                 mostrarDashboard();
@@ -163,8 +186,8 @@ document.getElementById('formLogin').addEventListener('submit', async (e) => {
         const data = await response.json();
 
         if (data.sucesso) {
-            msgDiv.textContent = '✅ ' + data.mensagem;
-            msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
+            msgDiv.innerHTML = '<i class="fas fa-check-circle mr-2" aria-hidden="true"></i>' + data.mensagem;
+            msgDiv.className = 'mensagem mensagem-sucesso fade-in';
             msgDiv.classList.remove('hidden');
 
             // =====================================================================
@@ -182,8 +205,8 @@ document.getElementById('formLogin').addEventListener('submit', async (e) => {
             // AGORA: chama /me para obter dados do usuário logado
             await processarLogin();
         } else {
-            msgDiv.textContent = '❌ ' + data.erro;
-            msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
+            msgDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2" aria-hidden="true"></i>' + data.erro;
+            msgDiv.className = 'mensagem mensagem-erro fade-in';
             msgDiv.classList.remove('hidden');
         }
     } catch (erro) {
@@ -205,10 +228,11 @@ async function processarLogin() {
         const meData = await meResponse.json();
 
         if (meData.sucesso) {
+            authState.isAdmin = !!meData.is_admin;
             // Define o nome do usuário logado
             document.getElementById('nomeUsuarioSpan').textContent = meData.nome;
 
-            if (meData.is_admin) {
+            if (authState.isAdmin) {
                 // É admin - mostra botão admin e vai direto para aba admin
                 document.getElementById('btnAdmin').classList.remove('hidden');
                 document.getElementById('btnHistorico').classList.add('hidden');
@@ -309,7 +333,259 @@ function logout() {
     localStorage.removeItem('auth_token');
     authState.logado = false;
     authState.tokenPresente = false;
-    window.location.href = '/logout';
+    authState.isAdmin = false;
+
+    // Tenta encerrar sessão pelo servidor; se falhar, limpa o frontend local e mostra o login
+    fetch('/logout', {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'follow'
+    }).finally(() => {
+        mostrarLogin();
+    });
+}
+
+function getFriendlyErrorMessage(erro) {
+    const texto = String(erro || '');
+    if (/429|too many requests|geocodifica/i.test(texto)) {
+        return '⚠️ Limite de geocodificação atingido. Tente novamente mais tarde ou preencha manualmente.';
+    }
+    return texto;
+}
+
+function abrirNumeroParaLigacao(numero) {
+    const telefone = String(numero).replace(/\D/g, '');
+    if (!telefone) {
+        return;
+    }
+    const link = `tel:${telefone}`;
+    window.open(link, '_blank');
+}
+
+const chatBotState = {
+    aberto: false,
+    contextoFicha: {
+        tipo_sanguineo: '',
+        alergias: '',
+        doencas: '',
+        medicamentos: '',
+        contato_nome: '',
+        contato_telefone: '',
+        observacoes: ''
+    },
+    historico: []
+};
+
+window.lastLocationInfo = {
+    latitude: null,
+    longitude: null,
+    endereco: '',
+    cidade: '',
+    estado: ''
+};
+
+function compartilharLocalizacaoWhatsApp() {
+    const info = window.lastLocationInfo;
+    if (!info || !info.latitude || !info.longitude) {
+        alert('Localização ainda não disponível. Tente novamente após capturar sua posição.');
+        return;
+    }
+
+    const coords = `${info.latitude.toFixed(6)}, ${info.longitude.toFixed(6)}`;
+    const endereco = info.endereco || `${info.cidade || ''}${info.cidade && info.estado ? ' - ' : ''}${info.estado || ''}`;
+    const mensagem = encodeURIComponent(`Estou compartilhando minha localização:\n${endereco || 'Endereço não disponível'}\nCoordenadas: ${coords}\nhttps://maps.google.com/?q=${info.latitude},${info.longitude}`);
+    const link = `https://api.whatsapp.com/send?text=${mensagem}`;
+    window.open(link, '_blank');
+}
+
+async function obterEnderecoCompleto(latitude, longitude) {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+        if (!response.ok) {
+            throw new Error('Erro ao obter endereço completo');
+        }
+        const data = await response.json();
+        const endereco = data.display_name || '';
+        const cidade = (data.address && (data.address.city || data.address.town || data.address.village || data.address.county)) || '';
+        const estado = (data.address && (data.address.state || data.address.region)) || '';
+        return { endereco, cidade, estado };
+    } catch (erro) {
+        console.error('Erro de reverse geocoding:', erro);
+        return null;
+    }
+}
+
+function acionarServicoTelefonico(event, servico, numero) {
+    if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+    }
+    acionarServico(event, servico);
+    setTimeout(() => abrirNumeroParaLigacao(numero), 250);
+}
+
+function abrirChatBot() {
+    chatBotState.aberto = true;
+    document.getElementById('chatBotWidget').classList.remove('hidden');
+    document.getElementById('chatBotButton').classList.add('hidden');
+    document.getElementById('chatInput').focus();
+
+    if (chatBotState.historico.length === 0) {
+        const roleMessage = authState.isAdmin
+            ? 'Olá, administrador. Posso ajudar com respostas rápidas sobre a ficha técnica do cliente e orientações de atendimento.'
+            : 'Olá! Sou seu assistente de primeiros socorros. Posso ajudar com orientações rápidas e usar sua ficha médica para sugestões mais seguras.';
+        chatBotState.historico.push({ sender: 'bot', message: roleMessage });
+    }
+    renderizarHistoricoChat();
+}
+
+function fecharChatBot() {
+    chatBotState.aberto = false;
+    document.getElementById('chatBotWidget').classList.add('hidden');
+    document.getElementById('chatBotButton').classList.remove('hidden');
+}
+
+function renderizarHistoricoChat() {
+    const chatWindow = document.getElementById('chatWindow');
+    if (!chatWindow) return;
+
+    chatWindow.innerHTML = chatBotState.historico.map(item => {
+        const classe = item.sender === 'user' ? 'chat-message user' : 'chat-message bot';
+        return `<div class="${classe}">${item.message}</div>`;
+    }).join('');
+
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function enviarPerguntaChatBot(event) {
+    event.preventDefault();
+    const input = document.getElementById('chatInput');
+    const texto = input.value.trim();
+    if (!texto) {
+        return;
+    }
+
+    chatBotState.historico.push({ sender: 'user', message: texto });
+    renderizarHistoricoChat();
+    input.value = '';
+
+    const resposta = obterRespostaChatBot(texto);
+    setTimeout(() => {
+        chatBotState.historico.push({ sender: 'bot', message: resposta });
+        renderizarHistoricoChat();
+    }, 300);
+}
+
+function atualizarChatContextoComFicha(ficha) {
+    if (!ficha) return;
+    chatBotState.contextoFicha.tipo_sanguineo = ficha.tipo_sanguineo || '';
+    chatBotState.contextoFicha.alergias = ficha.alergias || '';
+    chatBotState.contextoFicha.doencas = ficha.doencas || '';
+    chatBotState.contextoFicha.medicamentos = ficha.medicamentos || '';
+    chatBotState.contextoFicha.contato_nome = ficha.contato_nome || '';
+    chatBotState.contextoFicha.contato_telefone = ficha.contato_telefone || '';
+    chatBotState.contextoFicha.observacoes = ficha.observacoes || '';
+}
+
+function obterRespostaChatBot(pergunta) {
+    const texto = pergunta.toLowerCase();
+    const ficha = chatBotState.contextoFicha;
+    const partes = [];
+
+    if (texto.includes('sangramento') || texto.includes('sangue') || texto.includes('hemorragia')) {
+        partes.push('Para sangramento forte, pressione um pano limpo sobre o ferimento e eleve o membro afetado.');
+        if (ficha.tipo_sanguineo) {
+            partes.push(`Informe seu tipo sanguíneo (${ficha.tipo_sanguineo}) ao serviço de emergência se for necessário atendimento hospitalar.`);
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('desmaio') || texto.includes('inconsciente') || texto.includes('inconsciência')) {
+        partes.push('Deite a pessoa de costas e eleve levemente as pernas. Verifique se ela respira normalmente e mantenha a calma.');
+        if (ficha.doencas) {
+            partes.push(`Como sua ficha menciona: ${ficha.doencas}, informe isso ao socorrista.`);
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('queimadura')) {
+        partes.push('Resfrie a queimadura com água corrente fria por 10 a 20 minutos. Não use gelo direto nem pomadas sem orientação médica.');
+        if (ficha.medicamentos) {
+            partes.push('Se você usa medicamentos de uso contínuo, informe isso ao atendimento.' );
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('alergia')) {
+        partes.push('Se tiver alergias, não administre medicamentos sem saber a composição e informe sempre quais são as substâncias que causam reação.');
+        if (ficha.alergias) {
+            partes.push(`Sua ficha médica indica alergias a: ${ficha.alergias}. Mantenha essa informação sempre visível durante o atendimento.`);
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('cardíaco') || texto.includes('coração') || texto.includes('infarto')) {
+        partes.push('Se a pessoa está com dor no peito e falta de ar, chame o serviço médico imediatamente. Mantenha a pessoa em posição confortável e calma.');
+        if (ficha.tipo_sanguineo) {
+            partes.push(`Esteja pronto para informar seu tipo sanguíneo (${ficha.tipo_sanguineo}) se necessário.`);
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('respirar') || texto.includes('respiração') || texto.includes('asfixia')) {
+        partes.push('Verifique a via aérea. Afrouxe roupas ao redor do pescoço e mantenha a pessoa em posição confortável. Se necessário, procure socorro médico imediatamente.');
+        return partes.join(' ');
+    }
+
+    if (texto.includes('ficha') || texto.includes('técnica') || texto.includes('técnida') || texto.includes('dados do cliente') || texto.includes('cliente')) {
+        if (authState.isAdmin) {
+            partes.push('Como administrador, você pode consultar a ficha técnica do cliente com os dados de tipo sanguíneo, alergias, doenças pré-existentes, medicamentos e contatos de emergência.');
+            if (ficha.tipo_sanguineo) {
+                partes.push(`Tipo sanguíneo: ${ficha.tipo_sanguineo}.`);
+            }
+            if (ficha.alergias) {
+                partes.push(`Alergias registradas: ${ficha.alergias}.`);
+            }
+            if (ficha.doencas) {
+                partes.push(`Doenças ou condições: ${ficha.doencas}.`);
+            }
+            if (ficha.medicamentos) {
+                partes.push(`Medicamentos em uso: ${ficha.medicamentos}.`);
+            }
+            if (ficha.contato_nome && ficha.contato_telefone) {
+                partes.push(`Contato de emergência: ${ficha.contato_nome} (${ficha.contato_telefone}).`);
+            }
+            return partes.join(' ');
+        }
+
+        partes.push('Sua ficha médica reúne informações importantes como tipo sanguíneo, alergias, doenças e medicamentos em uso. Use essas informações para manter o socorro informado.');
+        if (ficha.alergias) {
+            partes.push(`Atenção: alergias registradas: ${ficha.alergias}.`);
+        }
+        if (ficha.medicamentos) {
+            partes.push(`Medicamentos em uso: ${ficha.medicamentos}.`);
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('socorros') || texto.includes('primeiros socorros') || texto.includes('ajuda')) {
+        if (authState.isAdmin) {
+            partes.push('Para atendimento imediato, oriente o cliente a manter a calma e informe a equipe de socorro sobre qualquer alergia ou condição especial presente na ficha técnica.');
+            return partes.join(' ');
+        }
+        partes.push('Para ações rápidas, mantenha calma, chame 192 para emergência médica ou 193 para bombeiros e use a ficha médica para informar alergias, doenças e contatos.');
+        if (ficha.contato_nome && ficha.contato_telefone) {
+            partes.push(`Seu contato de emergência é ${ficha.contato_nome} (${ficha.contato_telefone}). Informe isso ao atendimento se necessário.`);
+        }
+        return partes.join(' ');
+    }
+
+    if (texto.includes('contato') || texto.includes('emergência') || texto.includes('telefone')) {
+        return ficha.contato_nome && ficha.contato_telefone
+            ? `Seu contato de emergência salvo é ${ficha.contato_nome} (${ficha.contato_telefone}). Mantenha essa pessoa informada em caso de socorro.`
+            : 'Não há contato de emergência salvo na ficha. Verifique seus dados na aba de ficha médica.';
+    }
+
+    return 'Seja específico: fale sobre sangramento, desmaio, queimadura ou alergia. Para emergências graves, ligue imediatamente para 192 ou 193.';
 }
 
 // ============================================================================
@@ -408,6 +684,7 @@ async function carregarMunicipios(uf) {
 async function buscarCep() {
     const cepInput = document.getElementById('cadastroCep');
     const statusDiv = document.getElementById('cepStatus');
+    const btnBuscarCep = document.getElementById('btnBuscarCep');
     
     // Limpa o CEP (remove máscara)
     let cep = cepInput.value.replace(/\D/g, '');
@@ -420,9 +697,20 @@ async function buscarCep() {
 
     statusDiv.textContent = '🔍 Buscando CEP...';
     statusDiv.className = 'text-xs text-blue-600 mt-1';
+    if (btnBuscarCep) btnBuscarCep.disabled = true;
 
     try {
         const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        if (!response.ok) {
+            if (response.status === 429) {
+                statusDiv.textContent = '⚠️ Limite de requisições ao ViaCEP atingido. Aguarde e preencha manualmente.';
+            } else {
+                statusDiv.textContent = `⚠️ Erro ao buscar CEP: ${response.status}. Preencha manualmente.`;
+            }
+            statusDiv.className = 'text-xs text-red-600 mt-1';
+            return;
+        }
+
         const data = await response.json();
 
         if (data.erro) {
@@ -471,8 +759,11 @@ async function buscarCep() {
 
     } catch (erro) {
         console.error('Erro ao buscar CEP:', erro);
-        statusDiv.textContent = '⚠️ Erro ao buscar CEP. Preencha manualmente.';
+        const mensagem = getFriendlyErrorMessage(erro.message || erro);
+        statusDiv.textContent = mensagem;
         statusDiv.className = 'text-xs text-red-600 mt-1';
+    } finally {
+        if (btnBuscarCep) btnBuscarCep.disabled = false;
     }
 }
 
@@ -618,18 +909,32 @@ function removerFoto() {
 /**
  * Aciona um serviço de emergência com geolocalização
  */
-function acionarServico(servico) {
+function acionarServico(event, servico) {
     const statusDiv = document.getElementById('statusGeolocation');
     const msgDiv = document.getElementById('mensagemServico');
 
+    // Feedback visual imediato - encontra o botão clicado
+    const btnClicado = event?.target?.closest('button');
+    if (btnClicado) {
+        // Animação de clique
+        btnClicado.style.transform = 'scale(0.95)';
+        btnClicado.classList.add('animacao-pulse');
+
+        // Remove a animação após 2 segundos
+        setTimeout(() => {
+            btnClicado.style.transform = '';
+            btnClicado.classList.remove('animacao-pulse');
+        }, 2000);
+    }
+
     // Evita múltiplos cliques simultâneos
     if (window.servicoEmAndamento) {
-        statusDiv.textContent = '⏳ Aguarde o acionamento anterior...';
+        statusDiv.innerHTML = '<i class="fas fa-clock mr-1" aria-hidden="true"></i>Aguarde o acionamento anterior...';
         return;
     }
     window.servicoEmAndamento = true;
 
-    statusDiv.textContent = '📍 Capturando localização...';
+    statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Capturando localização...';
 
     // Tenta obter geolocalização
     if (navigator.geolocation) {
@@ -638,7 +943,34 @@ function acionarServico(servico) {
                 const latitude = position.coords.latitude;
                 const longitude = position.coords.longitude;
 
-                statusDiv.textContent = `📍 Localização: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                const enderecoInfo = await obterEnderecoCompleto(latitude, longitude);
+                if (enderecoInfo) {
+                    window.lastLocationInfo = {
+                        latitude,
+                        longitude,
+                        endereco: enderecoInfo.endereco,
+                        cidade: enderecoInfo.cidade,
+                        estado: enderecoInfo.estado
+                    };
+                } else {
+                    window.lastLocationInfo = {
+                        latitude,
+                        longitude,
+                        endereco: '',
+                        cidade: '',
+                        estado: ''
+                    };
+                }
+
+                const enderecoExibir = enderecoInfo && enderecoInfo.endereco
+                    ? enderecoInfo.endereco
+                    : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+
+                statusDiv.innerHTML = `📍 ${enderecoExibir}<br><span class="text-xs text-blue-700">Coordenadas: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}</span>`;
+                const shareBtn = document.getElementById('btnCompartilharLocalizacao');
+                if (shareBtn) {
+                    shareBtn.classList.remove('hidden');
+                }
 
                 // Envia para o backend
                 try {
@@ -670,7 +1002,8 @@ function acionarServico(servico) {
                         msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
                         msgDiv.classList.remove('hidden');
                     } else {
-                        msgDiv.textContent = '❌ ' + data.erro;
+                        const mensagem = getFriendlyErrorMessage(data.erro);
+                        msgDiv.textContent = '❌ ' + mensagem;
                         msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
                         msgDiv.classList.remove('hidden');
                     }
@@ -678,7 +1011,8 @@ function acionarServico(servico) {
                     // Libera flag anti-duplicação
                     window.servicoEmAndamento = false;
                 } catch (erro) {
-                    msgDiv.textContent = '❌ Erro ao acionar serviço';
+                    const mensagem = getFriendlyErrorMessage(erro.message || erro);
+                    msgDiv.textContent = '❌ ' + mensagem;
                     msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
                     msgDiv.classList.remove('hidden');
                     
@@ -723,7 +1057,8 @@ async function enviarServicoSemGeo(servico, msgDiv) {
             msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
             msgDiv.classList.remove('hidden');
         } else {
-            msgDiv.textContent = '❌ ' + data.erro;
+            const mensagem = getFriendlyErrorMessage(data.erro);
+            msgDiv.textContent = '❌ ' + mensagem;
             msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
             msgDiv.classList.remove('hidden');
         }
@@ -731,7 +1066,8 @@ async function enviarServicoSemGeo(servico, msgDiv) {
         // Libera flag anti-duplicação
         window.servicoEmAndamento = false;
     } catch (erro) {
-        msgDiv.textContent = '❌ Erro ao acionar serviço';
+        const mensagem = getFriendlyErrorMessage(erro.message || erro);
+        msgDiv.textContent = '❌ ' + mensagem;
         msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
         msgDiv.classList.remove('hidden');
         
@@ -994,12 +1330,66 @@ async function carregarAdmin() {
             } else {
                 listaAdminServicos.innerHTML = '<p class="text-gray-500">Nenhum serviço ativo no sistema</p>';
             }
+
+            const listaAdminUsuarios = document.getElementById('listaAdminClientes');
+            if (data.usuarios && data.usuarios.length > 0) {
+                listaAdminUsuarios.innerHTML = data.usuarios.map(u => {
+                    const statusBadge = u.ativo
+                        ? '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Ativo</span>'
+                        : '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Desativado</span>';
+                    const actionLabel = u.ativo ? 'Desativar' : 'Habilitar';
+                    const actionClass = u.ativo ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600';
+                    return `
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 shadow-sm">
+                            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                                <div>
+                                    <p class="font-semibold text-gray-800">${u.nome}</p>
+                                    <p class="text-sm text-gray-600">${u.email}</p>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    ${statusBadge}
+                                    <button onclick="alterarStatusUsuario(${u.id}, ${u.ativo ? 0 : 1})" class="${actionClass} text-white px-3 py-1 rounded-lg text-sm">${actionLabel}</button>
+                                </div>
+                            </div>
+                            <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-600">
+                                <div><span class="font-semibold">CPF:</span> ${u.cpf || '-'}</div>
+                                <div><span class="font-semibold">Telefone:</span> ${u.telefone || '-'}</div>
+                                <div><span class="font-semibold">Cadastro:</span> ${u.criado_em ? new Date(u.criado_em).toLocaleDateString('pt-BR') : '-'}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                listaAdminUsuarios.innerHTML = '<p class="text-gray-500">Nenhum cliente cadastrado no sistema.</p>';
+            }
         } else {
             alert('Erro ao carregar dados admin: ' + data.erro);
         }
     } catch (erro) {
         console.error('Erro na requisição admin:', erro);
         alert('Erro na conexão com o servidor');
+    }
+}
+
+async function alterarStatusUsuario(usuarioId, novoStatus) {
+    try {
+        const response = await fetch(`/admin/usuario/${usuarioId}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ ativo: novoStatus })
+        });
+
+        const data = await response.json();
+        if (data.sucesso) {
+            alert(data.mensagem);
+            carregarAdmin();
+        } else {
+            alert('Erro ao atualizar status: ' + data.erro);
+        }
+    } catch (erro) {
+        console.error('Erro ao atualizar status do usuário:', erro);
+        alert('Erro ao atualizar status do usuário');
     }
 }
 
@@ -1043,6 +1433,7 @@ async function carregarFichaMedica() {
             document.getElementById('fichaMedicamentos').textContent = data.ficha.medicamentos || '-';
             document.getElementById('fichaContatoNome').textContent = data.ficha.contato_nome || '-';
             document.getElementById('fichaContatoTelefone').textContent = data.ficha.contato_telefone || '-';
+            document.getElementById('fichaLocalizacao').textContent = data.ficha.localizacao || data.ficha.endereco || 'Não disponível';
             
             // =====================================================================
             // CORREÇÃO: Exibir data atualizada corretamente
@@ -1065,6 +1456,7 @@ async function carregarFichaMedica() {
             } else {
                 obsContainer.classList.add('hidden');
             }
+            atualizarChatContextoComFicha(data.ficha);
         } else {
             // Não tem ficha - mostra formulário vazio
             formDiv.classList.remove('hidden');
@@ -1156,6 +1548,7 @@ async function carregarDadosFichaMedicaEAtualizarInterface() {
             document.getElementById('fichaMedicamentos').textContent = data.ficha.medicamentos || '-';
             document.getElementById('fichaContatoNome').textContent = data.ficha.contato_nome || '-';
             document.getElementById('fichaContatoTelefone').textContent = data.ficha.contato_telefone || '-';
+            document.getElementById('fichaLocalizacao').textContent = data.ficha.localizacao || data.ficha.endereco || 'Não disponível';
             
             // =====================================================================
             // CORREÇÃO: Formatar data no padrão brasileiro (dd/mm/yyyy)
@@ -1176,6 +1569,8 @@ async function carregarDadosFichaMedicaEAtualizarInterface() {
             } else {
                 obsContainer.classList.add('hidden');
             }
+
+            atualizarChatContextoComFicha(data.ficha);
 
             // Mostra visualização e esconde formulário
             formDiv.classList.add('hidden');

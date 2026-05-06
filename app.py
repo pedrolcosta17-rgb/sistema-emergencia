@@ -52,9 +52,23 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 def get_db():
     """Conecta ao banco de dados SQLite"""
-    db = sqlite3.connect(DATABASE)
-    db.row_factory = sqlite3.Row
-    return db
+    try:
+        db = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+        return db
+    except sqlite3.DatabaseError as erro:
+        # Se o arquivo de banco estiver corrompido, faz backup e recria
+        backup_path = DATABASE + f'.corrupt.{datetime.now().strftime("%Y%m%d%H%M%S")}'
+        try:
+            os.rename(DATABASE, backup_path)
+            print(f'⚠️ Banco de dados corrompido detectado. Arquivo movido para: {backup_path}')
+        except Exception as rename_err:
+            print(f'❌ Não foi possível mover o arquivo corrompido: {rename_err}')
+
+        # Cria um novo banco limpo e inicializa o esquema
+        sqlite3.connect(DATABASE).close()
+        init_db()
+        return get_db()
 
 def init_db():
     """Inicializa o banco de dados com as tabelas necessárias"""
@@ -74,6 +88,7 @@ def init_db():
             telefone_alternativo TEXT,
             endereco TEXT,
             lgpd_consentimento INTEGER,
+            ativo INTEGER DEFAULT 1,
             is_admin INTEGER DEFAULT 0,
             criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -86,6 +101,8 @@ def init_db():
         cursor.execute('ALTER TABLE usuarios ADD COLUMN is_admin INTEGER DEFAULT 0')
     if 'endereco' not in colunas:
         cursor.execute('ALTER TABLE usuarios ADD COLUMN endereco TEXT')
+    if 'ativo' not in colunas:
+        cursor.execute('ALTER TABLE usuarios ADD COLUMN ativo INTEGER DEFAULT 1')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS denuncias (
@@ -379,8 +396,8 @@ def cadastro():
             cursor = db.cursor()
             cursor.execute('''
                 INSERT INTO usuarios 
-                (nome, email, senha, cpf, telefone, data_nascimento, genero, telefone_alternativo, endereco, lgpd_consentimento)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (nome, email, senha, cpf, telefone, data_nascimento, genero, telefone_alternativo, endereco, lgpd_consentimento, ativo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 data['nome'].strip(),
                 data['email'].strip().lower(),
@@ -391,6 +408,7 @@ def cadastro():
                 data.get('genero', ''),
                 telefone_alternativo.strip() or None,
                 endereco_completo,
+                1,
                 1
             ))
             db.commit()
@@ -416,9 +434,13 @@ def login():
         
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT id, senha, is_admin FROM usuarios WHERE email = ?', (email,))
+        cursor.execute('SELECT id, senha, is_admin, ativo FROM usuarios WHERE email = ?', (email,))
         user = cursor.fetchone()
         
+        if user and not user['ativo']:
+            db.close()
+            return jsonify({'sucesso': False, 'erro': 'Usuário desativado. Contate o administrador.'}), 403
+
         if user and check_password_hash(user['senha'], senha):
             session['user_id'] = user['id']
             session['is_admin'] = user['is_admin'] if 'is_admin' in user.keys() else 0
@@ -859,6 +881,14 @@ def admin_dados():
     ''')
     denuncias = [dict(row) for row in cursor.fetchall()]
     
+    cursor.execute('''
+        SELECT id, nome, email, cpf, telefone, telefone_alternativo, endereco, data_nascimento, genero, ativo, criado_em
+        FROM usuarios
+        WHERE is_admin = 0
+        ORDER BY nome ASC
+    ''')
+    usuarios = [dict(row) for row in cursor.fetchall()]
+    
     # =====================================================================
     # BUSCAR SERVIÇOS COM JOIN - dados atuais DA FICHA + snapshot
     # =====================================================================
@@ -1008,12 +1038,41 @@ def admin_dados():
         },
         'denuncias': denuncias,
         'servicos': servicos,
+        'usuarios': usuarios,
         'estatisticas': {
             'total_denuncias': len(denuncias),
             'total_servicos': len(servicos),
             'total_usuarios': total_usuarios
         }
     })
+
+@app.route('/admin/usuario/<int:usuario_id>/status', methods=['POST'])
+def admin_alterar_status_usuario(usuario_id):
+    if 'user_id' not in session:
+        return jsonify({'sucesso': False, 'erro': 'Usuário não autenticado'}), 401
+
+    if not session.get('is_admin', 0):
+        return jsonify({'sucesso': False, 'erro': 'Acesso negado. Apenas administradores.'}), 403
+
+    data = request.get_json() or {}
+    novo_status = data.get('ativo')
+    if novo_status not in (0, 1, True, False):
+        return jsonify({'sucesso': False, 'erro': 'Status inválido.'}), 400
+
+    novo_status_int = 1 if bool(novo_status) else 0
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT id FROM usuarios WHERE id = ? AND is_admin = 0', (usuario_id,))
+    usuario = cursor.fetchone()
+    if not usuario:
+        db.close()
+        return jsonify({'sucesso': False, 'erro': 'Usuário não encontrado ou não é cliente.'}), 404
+
+    cursor.execute('UPDATE usuarios SET ativo = ? WHERE id = ?', (novo_status_int, usuario_id))
+    db.commit()
+    db.close()
+
+    return jsonify({'sucesso': True, 'mensagem': 'Status do usuário atualizado com sucesso.', 'ativo': novo_status_int})
 
 @app.route('/admin/finalizar-denuncia/<int:denuncia_id>', methods=['POST'])
 def finalizar_denuncia(denuncia_id):
@@ -1094,4 +1153,4 @@ if __name__ == '__main__':
             print('✅ Usuário admin criado: admin@emergencia.com / admin123')
         db.close()
         
-    app.run(debug=True)
+    app.run(debug=True,host="0.0.0.0", port=5000)
