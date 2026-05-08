@@ -400,15 +400,42 @@ function compartilharLocalizacaoWhatsApp() {
 
 async function obterEnderecoCompleto(latitude, longitude) {
     try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&addressdetails=1`);
         if (!response.ok) {
             throw new Error('Erro ao obter endereço completo');
         }
         const data = await response.json();
-        const endereco = data.display_name || '';
-        const cidade = (data.address && (data.address.city || data.address.town || data.address.village || data.address.county)) || '';
-        const estado = (data.address && (data.address.state || data.address.region)) || '';
-        return { endereco, cidade, estado };
+        const address = data.address || {};
+
+        const rua = address.road || address.pedestrian || address.path || address.cycleway || '';
+        const numero = address.house_number || '';
+        const bairro = address.neighbourhood || address.suburb || address.village || address.city_district || '';
+        const cidade = address.city || address.town || address.village || address.county || '';
+        const estado = address.state || address.region || '';
+        const cep = address.postcode || '';
+        const pais = address.country || '';
+
+        const endereco = data.display_name || [
+            rua,
+            numero,
+            bairro,
+            cidade,
+            estado,
+            cep,
+            pais
+        ].filter(Boolean).join(', ');
+
+        return {
+            endereco_completo: endereco,
+            rua,
+            numero,
+            bairro,
+            cidade,
+            estado,
+            cep,
+            pais,
+            precisao: address.osm_type || null
+        };
     } catch (erro) {
         console.error('Erro de reverse geocoding:', erro);
         return null;
@@ -938,32 +965,51 @@ function acionarServico(event, servico) {
 
     // Tenta obter geolocalização
     if (navigator.geolocation) {
+        const geoOptions = {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 0
+        };
+
         navigator.geolocation.getCurrentPosition(
             async (position) => {
                 const latitude = position.coords.latitude;
                 const longitude = position.coords.longitude;
+                const precisao = position.coords.accuracy || null;
 
                 const enderecoInfo = await obterEnderecoCompleto(latitude, longitude);
                 if (enderecoInfo) {
                     window.lastLocationInfo = {
                         latitude,
                         longitude,
-                        endereco: enderecoInfo.endereco,
+                        endereco: enderecoInfo.endereco_completo,
+                        rua: enderecoInfo.rua,
+                        numero: enderecoInfo.numero,
+                        bairro: enderecoInfo.bairro,
                         cidade: enderecoInfo.cidade,
-                        estado: enderecoInfo.estado
+                        estado: enderecoInfo.estado,
+                        cep: enderecoInfo.cep,
+                        pais: enderecoInfo.pais,
+                        precisao
                     };
                 } else {
                     window.lastLocationInfo = {
                         latitude,
                         longitude,
                         endereco: '',
+                        rua: '',
+                        numero: '',
+                        bairro: '',
                         cidade: '',
-                        estado: ''
+                        estado: '',
+                        cep: '',
+                        pais: '',
+                        precisao
                     };
                 }
 
-                const enderecoExibir = enderecoInfo && enderecoInfo.endereco
-                    ? enderecoInfo.endereco
+                const enderecoExibir = enderecoInfo && enderecoInfo.endereco_completo
+                    ? enderecoInfo.endereco_completo
                     : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
 
                 statusDiv.innerHTML = `📍 ${enderecoExibir}<br><span class="text-xs text-blue-700">Coordenadas: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}</span>`;
@@ -981,7 +1027,16 @@ function acionarServico(event, servico) {
                         body: JSON.stringify({
                             servico,
                             latitude,
-                            longitude
+                            longitude,
+                            endereco_completo: window.lastLocationInfo.endereco,
+                            rua: window.lastLocationInfo.rua,
+                            numero: window.lastLocationInfo.numero,
+                            bairro: window.lastLocationInfo.bairro,
+                            cidade: window.lastLocationInfo.cidade,
+                            estado: window.lastLocationInfo.estado,
+                            cep: window.lastLocationInfo.cep,
+                            pais: window.lastLocationInfo.pais,
+                            precisao: window.lastLocationInfo.precisao
                         })
                     });
 
@@ -1039,15 +1094,38 @@ function acionarServico(event, servico) {
  */
 async function enviarServicoSemGeo(servico, msgDiv) {
     try {
+        const payload = {
+            servico,
+            latitude: null,
+            longitude: null,
+            endereco_completo: null,
+            rua: null,
+            numero: null,
+            bairro: null,
+            cidade: null,
+            estado: null,
+            cep: null,
+            pais: null,
+            precisao: null
+        };
+
+        if (window.lastLocationInfo) {
+            payload.endereco_completo = window.lastLocationInfo.endereco || null;
+            payload.rua = window.lastLocationInfo.rua || null;
+            payload.numero = window.lastLocationInfo.numero || null;
+            payload.bairro = window.lastLocationInfo.bairro || null;
+            payload.cidade = window.lastLocationInfo.cidade || null;
+            payload.estado = window.lastLocationInfo.estado || null;
+            payload.cep = window.lastLocationInfo.cep || null;
+            payload.pais = window.lastLocationInfo.pais || null;
+            payload.precisao = window.lastLocationInfo.precisao || null;
+        }
+
         const response = await fetch('/servico', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({
-                servico,
-                latitude: null,
-                longitude: null
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
