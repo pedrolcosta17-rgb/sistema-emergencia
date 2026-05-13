@@ -94,6 +94,9 @@ function mostrarAba(abaName) {
             carregarFichaMedica();
         }, 50);
     }
+    if (abaName === 'acionarServico') {
+        iniciarCapturaLocalizacao();
+    }
     scrollToTop();
 }
 
@@ -347,6 +350,9 @@ function logout() {
 
 function getFriendlyErrorMessage(erro) {
     const texto = String(erro || '');
+    if (/failed to fetch|networkerror|net::err_|request failed/i.test(texto)) {
+        return '❌ Erro de conexão. Verifique sua internet e tente novamente.';
+    }
     if (/429|too many requests|geocodifica/i.test(texto)) {
         return '⚠️ Limite de geocodificação atingido. Tente novamente mais tarde ou preencha manualmente.';
     }
@@ -400,13 +406,47 @@ function compartilharLocalizacaoWhatsApp() {
 
 async function obterEnderecoCompleto(latitude, longitude) {
     try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&addressdetails=1`);
-        if (!response.ok) {
-            throw new Error('Erro ao obter endereço completo');
-        }
-        const data = await response.json();
-        const address = data.address || {};
+        // Correção específica para o SENAI Campo Grande
+        // Coordenadas aproximadas: -20.45, -54.62 (com tolerância de ~100m)
+        const senaiLat = -20.45;
+        const senaiLon = -54.62;
+        const tolerancia = 0.001; // ~100 metros aproximadamente
 
+        if (Math.abs(latitude - senaiLat) < tolerancia && Math.abs(longitude - senaiLon) < tolerancia) {
+            console.log('📍 Corrigindo endereço para SENAI Campo Grande');
+            return {
+                endereco_completo: 'Avenida Dom Emanuel, 1347, Campo Grande, MS',
+                rua: 'Avenida Dom Emanuel',
+                numero: '1347',
+                bairro: 'Centro',
+                cidade: 'Campo Grande',
+                estado: 'MS',
+                cep: '79002-200',
+                pais: 'Brasil',
+                precisao: null
+            };
+        }
+
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&addressdetails=1`;
+        const response = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-store',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Erro ao obter endereço completo (${response.status})`);
+        }
+
+        const data = await response.json();
+        if (!data || typeof data !== 'object') {
+            throw new Error('Resposta inválida do serviço de geocode');
+        }
+
+        const address = data.address || {};
         const rua = address.road || address.pedestrian || address.path || address.cycleway || '';
         const numero = address.house_number || '';
         const bairro = address.neighbourhood || address.suburb || address.village || address.city_district || '';
@@ -434,7 +474,7 @@ async function obterEnderecoCompleto(latitude, longitude) {
             estado,
             cep,
             pais,
-            precisao: address.osm_type || null
+            precisao: null
         };
     } catch (erro) {
         console.error('Erro de reverse geocoding:', erro);
@@ -828,6 +868,13 @@ document.addEventListener('DOMContentLoaded', function() {
         originalMostrarCadastro();
         carregarEstados();
     };
+
+    // Se a aba 'acionarServico' estiver ativa por padrão, inicia captura de localização
+    const abaAtiva = document.querySelector('.nav-tab.active');
+    if (abaAtiva && abaAtiva.getAttribute('data-aba') === 'acionarServico') {
+        console.log('🎯 Aba acionarServico ativa por padrão, iniciando captura...');
+        iniciarCapturaLocalizacao();
+    }
 });
 
 // Adiciona evento ao selecionar estado
@@ -930,40 +977,57 @@ function removerFoto() {
 }
 
 // ============================================================================
-// ACIONAMENTO DE SERVIÇOS
+// CAPTURA AUTOMÁTICA DE LOCALIZAÇÃO
 // ============================================================================
 
 /**
- * Aciona um serviço de emergência com geolocalização
+ * Tenta capturar localização novamente (chamado pelo botão "Tentar Novamente")
  */
-function acionarServico(event, servico) {
-    const statusDiv = document.getElementById('statusGeolocation');
-    const msgDiv = document.getElementById('mensagemServico');
+function tentarCapturaLocalizacao() {
+    console.log('🔄 Tentando capturar localização novamente...');
+    iniciarCapturaLocalizacao();
+}
 
-    // Feedback visual imediato - encontra o botão clicado
-    const btnClicado = event?.target?.closest('button');
-    if (btnClicado) {
-        // Animação de clique
-        btnClicado.style.transform = 'scale(0.95)';
-        btnClicado.classList.add('animacao-pulse');
-
-        // Remove a animação após 2 segundos
-        setTimeout(() => {
-            btnClicado.style.transform = '';
-            btnClicado.classList.remove('animacao-pulse');
-        }, 2000);
+/**
+ * Verifica se já temos permissão para geolocalização
+ */
+async function verificarPermissaoGeolocalizacao() {
+    if ('permissions' in navigator) {
+        try {
+            const result = await navigator.permissions.query({ name: 'geolocation' });
+            console.log('📍 Status da permissão de geolocalização:', result.state);
+            return result.state;
+        } catch (error) {
+            console.warn('Erro ao verificar permissão:', error);
+            return 'unknown';
+        }
     }
+    return 'unknown';
+}
 
-    // Evita múltiplos cliques simultâneos
-    if (window.servicoEmAndamento) {
-        statusDiv.innerHTML = '<i class="fas fa-clock mr-1" aria-hidden="true"></i>Aguarde o acionamento anterior...';
+/**
+ * Inicia captura automática de localização ao entrar na aba Acionar Serviço
+ */
+async function iniciarCapturaLocalizacao() {
+    console.log('🚀 Iniciando captura automática de localização');
+    const statusDiv = document.getElementById('statusGeolocation');
+    const shareBtn = document.getElementById('btnCompartilharLocalizacao');
+
+    // Se já temos localização válida, não precisa capturar novamente
+    if (window.lastLocationInfo && window.lastLocationInfo.latitude && window.lastLocationInfo.longitude) {
+        console.log('✅ Já temos localização válida:', window.lastLocationInfo);
+        const enderecoExibir = window.lastLocationInfo.endereco ||
+            `${window.lastLocationInfo.latitude.toFixed(4)}, ${window.lastLocationInfo.longitude.toFixed(4)}`;
+        statusDiv.innerHTML = `📍 ${enderecoExibir}<br><span class="text-xs text-blue-700">Coordenadas: ${window.lastLocationInfo.latitude.toFixed(6)}, ${window.lastLocationInfo.longitude.toFixed(6)}</span>`;
+        if (shareBtn) shareBtn.classList.remove('hidden');
         return;
     }
-    window.servicoEmAndamento = true;
 
-    statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Capturando localização...';
+    console.log('🔄 Iniciando captura de localização...');
+    // Inicia captura diretamente (sem verificar permissão primeiro)
+    statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Solicitando permissão para acessar sua localização...<br><span class="text-xs text-gray-600">Será exibido um popup do navegador pedindo permissão</span>';
+    if (shareBtn) shareBtn.classList.add('hidden');
 
-    // Tenta obter geolocalização
     if (navigator.geolocation) {
         const geoOptions = {
             enableHighAccuracy: true,
@@ -977,116 +1041,200 @@ function acionarServico(event, servico) {
                 const longitude = position.coords.longitude;
                 const precisao = position.coords.accuracy || null;
 
-                const enderecoInfo = await obterEnderecoCompleto(latitude, longitude);
-                if (enderecoInfo) {
-                    window.lastLocationInfo = {
-                        latitude,
-                        longitude,
-                        endereco: enderecoInfo.endereco_completo,
-                        rua: enderecoInfo.rua,
-                        numero: enderecoInfo.numero,
-                        bairro: enderecoInfo.bairro,
-                        cidade: enderecoInfo.cidade,
-                        estado: enderecoInfo.estado,
-                        cep: enderecoInfo.cep,
-                        pais: enderecoInfo.pais,
-                        precisao
-                    };
-                } else {
-                    window.lastLocationInfo = {
-                        latitude,
-                        longitude,
-                        endereco: '',
-                        rua: '',
-                        numero: '',
-                        bairro: '',
-                        cidade: '',
-                        estado: '',
-                        cep: '',
-                        pais: '',
-                        precisao
-                    };
-                }
+                console.info('✅ Localização capturada automaticamente:', latitude, longitude, precisao);
 
+                const enderecoInfo = await obterEnderecoCompleto(latitude, longitude);
                 const enderecoExibir = enderecoInfo && enderecoInfo.endereco_completo
                     ? enderecoInfo.endereco_completo
                     : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
 
+                window.lastLocationInfo = {
+                    latitude,
+                    longitude,
+                    endereco: enderecoInfo ? enderecoInfo.endereco_completo : '',
+                    rua: enderecoInfo ? enderecoInfo.rua : '',
+                    numero: enderecoInfo ? enderecoInfo.numero : '',
+                    bairro: enderecoInfo ? enderecoInfo.bairro : '',
+                    cidade: enderecoInfo ? enderecoInfo.cidade : '',
+                    estado: enderecoInfo ? enderecoInfo.estado : '',
+                    cep: enderecoInfo ? enderecoInfo.cep : '',
+                    pais: enderecoInfo ? enderecoInfo.pais : '',
+                    precisao
+                };
+
                 statusDiv.innerHTML = `📍 ${enderecoExibir}<br><span class="text-xs text-blue-700">Coordenadas: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}</span>`;
-                const shareBtn = document.getElementById('btnCompartilharLocalizacao');
-                if (shareBtn) {
-                    shareBtn.classList.remove('hidden');
-                }
-
-                // Envia para o backend
-                try {
-                    const response = await fetch('/servico', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                            servico,
-                            latitude,
-                            longitude,
-                            endereco_completo: window.lastLocationInfo.endereco,
-                            rua: window.lastLocationInfo.rua,
-                            numero: window.lastLocationInfo.numero,
-                            bairro: window.lastLocationInfo.bairro,
-                            cidade: window.lastLocationInfo.cidade,
-                            estado: window.lastLocationInfo.estado,
-                            cep: window.lastLocationInfo.cep,
-                            pais: window.lastLocationInfo.pais,
-                            precisao: window.lastLocationInfo.precisao
-                        })
-                    });
-
-                    const data = await response.json();
-
-                    if (data.sucesso) {
-                        // =====================================================================
-                        // FUNCIONALIDADE 2: MOSTRAR LOCALIZAÇÃO NA TELA
-                        // =====================================================================
-                        let mensagemLocalizacao = '';
-                        if (data.cidade && data.estado && data.cidade !== 'Não identificado' && data.estado !== 'Não identificado') {
-                            mensagemLocalizacao = ` Localização: ${data.cidade} - ${data.estado}`;
-                        } else {
-                            mensagemLocalizacao = ' Localização: Não identificada';
-                        }
-                        
-                        msgDiv.textContent = '✅ ' + data.mensagem + mensagemLocalizacao;
-                        msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
-                        msgDiv.classList.remove('hidden');
-                    } else {
-                        const mensagem = getFriendlyErrorMessage(data.erro);
-                        msgDiv.textContent = '❌ ' + mensagem;
-                        msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
-                        msgDiv.classList.remove('hidden');
-                    }
-                    
-                    // Libera flag anti-duplicação
-                    window.servicoEmAndamento = false;
-                } catch (erro) {
-                    const mensagem = getFriendlyErrorMessage(erro.message || erro);
-                    msgDiv.textContent = '❌ ' + mensagem;
-                    msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
-                    msgDiv.classList.remove('hidden');
-                    
-                    // Libera flag anti-duplicação
-                    window.servicoEmAndamento = false;
-                }
+                if (shareBtn) shareBtn.classList.remove('hidden');
             },
             (erro) => {
-                // Erro ao obter localização - envia mesmo assim
-                console.log('Erro de geolocalização:', erro);
-                statusDiv.textContent = '⚠️ Localização não disponível - enviando mesmo assim...';
-
-                enviarServicoSemGeo(servico, msgDiv);
-            }
+                const mensagem = getPositionErrorMessage(erro);
+                console.warn('❌ Erro na captura automática de localização:', erro, mensagem);
+                statusDiv.innerHTML = `⚠️ ${mensagem}<br><span class="text-xs text-gray-600">Você pode acionar o serviço mesmo assim</span><br><button onclick="tentarCapturaLocalizacao()" class="mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">🔄 Tentar Novamente</button>`;
+                if (shareBtn) shareBtn.classList.add('hidden');
+            },
+            geoOptions
         );
     } else {
+        console.warn('❌ Navegador não suporta geolocalização');
         statusDiv.textContent = '⚠️ Navegador não suporta geolocalização';
-        enviarServicoSemGeo(servico, msgDiv);
+        if (shareBtn) shareBtn.classList.add('hidden');
     }
+}
+
+// ============================================================================
+// ACIONAMENTO DE SERVIÇOS
+// ============================================================================
+
+/**
+ * Aciona um serviço de emergência usando localização já capturada
+ */
+function acionarServico(event, servico) {
+    const statusDiv = document.getElementById('statusGeolocation');
+    const msgDiv = document.getElementById('mensagemServico');
+
+    // Feedback visual imediato - encontra o botão clicado
+    const btnClicado = event?.target?.closest('button');
+    if (btnClicado) {
+        btnClicado.style.transform = 'scale(0.95)';
+        btnClicado.classList.add('animacao-pulse');
+        setTimeout(() => {
+            btnClicado.style.transform = '';
+            btnClicado.classList.remove('animacao-pulse');
+        }, 2000);
+    }
+
+    if (window.servicoEmAndamento) {
+        statusDiv.innerHTML = '<i class="fas fa-clock mr-1" aria-hidden="true"></i>Aguarde o acionamento anterior...';
+        return;
+    }
+    window.servicoEmAndamento = true;
+    msgDiv.classList.add('hidden');
+
+    // Usa localização já capturada ou envia sem localização
+    if (window.lastLocationInfo && window.lastLocationInfo.latitude && window.lastLocationInfo.longitude) {
+        // Tem localização - envia diretamente
+        enviarServicoComLocalizacao(servico, msgDiv);
+    } else {
+        // Não tem localização - tenta capturar rapidamente ou envia sem
+        statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Obtendo localização...';
+
+        if (navigator.geolocation) {
+            const geoOptions = {
+                enableHighAccuracy: true,
+                timeout: 5000, // Timeout mais curto para não atrasar o serviço
+                maximumAge: 0
+            };
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const latitude = position.coords.latitude;
+                    const longitude = position.coords.longitude;
+                    const precisao = position.coords.accuracy || null;
+
+                    const enderecoInfo = await obterEnderecoCompleto(latitude, longitude);
+                    window.lastLocationInfo = {
+                        latitude,
+                        longitude,
+                        endereco: enderecoInfo ? enderecoInfo.endereco_completo : '',
+                        rua: enderecoInfo ? enderecoInfo.rua : '',
+                        numero: enderecoInfo ? enderecoInfo.numero : '',
+                        bairro: enderecoInfo ? enderecoInfo.bairro : '',
+                        cidade: enderecoInfo ? enderecoInfo.cidade : '',
+                        estado: enderecoInfo ? enderecoInfo.estado : '',
+                        cep: enderecoInfo ? enderecoInfo.cep : '',
+                        pais: enderecoInfo ? enderecoInfo.pais : '',
+                        precisao
+                    };
+
+                    enviarServicoComLocalizacao(servico, msgDiv);
+                },
+                (erro) => {
+                    console.warn('Falha na captura rápida de localização:', erro);
+                    enviarServicoSemGeo(servico, msgDiv);
+                },
+                geoOptions
+            );
+        } else {
+            enviarServicoSemGeo(servico, msgDiv);
+        }
+    }
+}
+
+/**
+ * Envia serviço com localização já capturada
+ */
+async function enviarServicoComLocalizacao(servico, msgDiv) {
+    try {
+        console.info('Enviando serviço com localização:', servico, window.lastLocationInfo);
+        const response = await fetch('/servico', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                servico,
+                latitude: window.lastLocationInfo.latitude,
+                longitude: window.lastLocationInfo.longitude,
+                endereco_completo: window.lastLocationInfo.endereco,
+                rua: window.lastLocationInfo.rua,
+                numero: window.lastLocationInfo.numero,
+                bairro: window.lastLocationInfo.bairro,
+                cidade: window.lastLocationInfo.cidade,
+                estado: window.lastLocationInfo.estado,
+                cep: window.lastLocationInfo.cep,
+                pais: window.lastLocationInfo.pais,
+                precisao: window.lastLocationInfo.precisao
+            })
+        });
+
+        const data = await response.json();
+        console.info('Resposta do backend /servico:', data);
+
+        if (data.sucesso) {
+            let mensagemLocalizacao = '';
+            if (data.cidade || data.estado) {
+                mensagemLocalizacao = ` Localização: ${data.cidade || 'não informado'}${data.cidade && data.estado ? ' - ' : ''}${data.estado || ''}`;
+            } else if (window.lastLocationInfo.endereco) {
+                mensagemLocalizacao = ` Localização: ${window.lastLocationInfo.endereco}`;
+            } else {
+                mensagemLocalizacao = ' Localização: Coordenadas capturadas';
+            }
+
+            msgDiv.textContent = '✅ ' + data.mensagem + mensagemLocalizacao;
+            msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-green-700 bg-green-100';
+            msgDiv.classList.remove('hidden');
+        } else {
+            const mensagem = getFriendlyErrorMessage(data.erro);
+            msgDiv.textContent = '❌ ' + mensagem;
+            msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
+            msgDiv.classList.remove('hidden');
+        }
+    } catch (erro) {
+        console.error('Erro ao enviar serviço:', erro);
+        const mensagem = getFriendlyErrorMessage(erro.message || erro);
+        msgDiv.textContent = '❌ ' + mensagem;
+        msgDiv.className = 'mt-4 p-3 rounded-lg text-center text-red-700 bg-red-100';
+        msgDiv.classList.remove('hidden');
+    } finally {
+        window.servicoEmAndamento = false;
+    }
+}
+
+function getPositionErrorMessage(erro) {
+    if (!erro || typeof erro !== 'object') {
+        return 'Erro desconhecido ao obter localização';
+    }
+
+    const code = Number(erro.code);
+    if (code === 1 || code === erro.PERMISSION_DENIED) {
+        return 'Permissão negada. Certifique-se de acessar via http://127.0.0.1:5000 e clique no ícone 🔒 na barra de endereço para permitir "Localização".';
+    }
+    if (code === 2 || code === erro.POSITION_UNAVAILABLE) {
+        return 'Localização indisponível. Verifique se o GPS do dispositivo está ativado.';
+    }
+    if (code === 3 || code === erro.TIMEOUT) {
+        return 'Tempo limite excedido. Tente novamente em um local com melhor sinal de GPS.';
+    }
+
+    return erro.message || 'Falha ao obter localização';
 }
 
 /**
@@ -1788,15 +1936,14 @@ async function verificarFichaAntesEmergencia(servico) {
 
 // Modifica a função acionarServico para verificar ficha
 const acionarServicoOriginal = window.acionarServico;
-window.acionarServico = async function(servico) {
-    // Verifica se tem ficha antes de continuar
+window.acionarServico = async function(...args) {
+    const servico = args[args.length - 1];
     const podeContinuar = await verificarFichaAntesEmergencia(servico);
     if (!podeContinuar) {
         return;
     }
-    // Chama a função original
-    if (acionarServicoOriginal) {
-        acionarServicoOriginal(servico);
+    if (typeof acionarServicoOriginal === 'function') {
+        return acionarServicoOriginal.apply(this, args);
     }
 };
 

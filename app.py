@@ -2,6 +2,7 @@ import os
 import re
 import json
 import secrets
+import socket
 import unicodedata
 import sqlite3
 from datetime import datetime, timedelta
@@ -56,7 +57,7 @@ def ensure_column(cursor, table, column, definition):
 def reverse_geocode_server(latitude, longitude):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={latitude}&lon={longitude}&addressdetails=1"
-        request = Request(url, headers={'User-Agent': 'EmergencySystem/1.0 (+https://example.com)'});
+        request = Request(url, headers={'User-Agent': 'EmergencySystem/1.0 (+https://example.com)'})
         with urlopen(request, timeout=10) as response:
             raw = response.read().decode('utf-8')
             data = json.loads(raw)
@@ -72,7 +73,8 @@ def reverse_geocode_server(latitude, longitude):
                 'pais': address.get('country', ''),
                 'precisao': None
             }
-    except (HTTPError, URLError, ValueError, TimeoutError):
+    except Exception as e:
+        app.logger.error('reverse_geocode_server falhou para %s,%s: %s', latitude, longitude, e)
         return None
 
 
@@ -497,22 +499,36 @@ def servico():
     raw_tipo = data.get('servico', '')
     tipo = map_service_name(raw_tipo)
 
+    app.logger.info('Recebido acionamento de serviço: %s', raw_tipo)
+
     if not tipo:
         app.logger.debug('Serviço inválido recebido: %s', raw_tipo)
         return jsonify({'sucesso': False, 'erro': 'Serviço inválido'}), 400
 
     latitude = data.get('latitude')
     longitude = data.get('longitude')
-    endereco_completo = data.get('endereco_completo') or data.get('endereco') or ''
-    rua = data.get('rua', '')
-    bairro = data.get('bairro', '')
-    cidade = data.get('cidade', '')
-    estado = data.get('estado', '')
-    cep = data.get('cep', '')
-    pais = data.get('pais', '')
     precisao = data.get('precisao')
 
+    try:
+        latitude = float(latitude) if latitude not in (None, '') else None
+        longitude = float(longitude) if longitude not in (None, '') else None
+        precisao = float(precisao) if precisao not in (None, '') else None
+    except (ValueError, TypeError) as e:
+        app.logger.warning('Latitude/longitude inválidas recebidas: %s / %s - %s', data.get('latitude'), data.get('longitude'), e)
+        latitude = None
+        longitude = None
+        precisao = None
+
+    endereco_completo = data.get('endereco_completo') or data.get('endereco') or ''
+    rua = data.get('rua', '') or ''
+    bairro = data.get('bairro', '') or ''
+    cidade = data.get('cidade', '') or ''
+    estado = data.get('estado', '') or ''
+    cep = data.get('cep', '') or ''
+    pais = data.get('pais', '') or ''
+
     if not endereco_completo and latitude is not None and longitude is not None:
+        app.logger.info('Executando reverse_geocode_server para %s, %s', latitude, longitude)
         geocode_data = reverse_geocode_server(latitude, longitude)
         if geocode_data:
             endereco_completo = endereco_completo or geocode_data.get('endereco_completo', '')
@@ -522,6 +538,8 @@ def servico():
             estado = estado or geocode_data.get('estado', '')
             cep = cep or geocode_data.get('cep', '')
             pais = pais or geocode_data.get('pais', '')
+        else:
+            app.logger.warning('reverse_geocode_server retornou nenhum resultado para %s,%s', latitude, longitude)
 
     try:
         ficha = get_ficha_medica(session['user_id'])
@@ -557,7 +575,13 @@ def servico():
             'sucesso': True,
             'mensagem': f'Serviço de {tipo} acionado com sucesso! Aguarde contato.',
             'cidade': cidade,
-            'estado': estado
+            'estado': estado,
+            'cep': cep,
+            'rua': rua,
+            'bairro': bairro,
+            'pais': pais,
+            'latitude': latitude,
+            'longitude': longitude
         })
     except Exception as e:
         app.logger.exception('Erro ao salvar serviço: %s', e)
@@ -778,4 +802,25 @@ def admin_finalizar_servico(servico_id):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-    app.run(debug=True)
+def get_local_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
+    except Exception:
+        return '127.0.0.1'
+
+if __name__ == '__main__':
+    local_ip = get_local_ip()
+    print('========================================')
+    print('SERVIDOR INICIADO')
+    print('========================================')
+    print('🔒 IMPORTANTE: Para geolocalização funcionar, use:')
+    print('http://127.0.0.1:5000')
+    print('========================================')
+    print('Acesso Local:')
+    print('http://127.0.0.1:5000')
+    print('Acesso Rede:')
+    print(f'http://{local_ip}:5000')
+    print('========================================')
+    app.run(host='127.0.0.1', debug=True, port=5000)
